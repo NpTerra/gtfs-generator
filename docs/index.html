@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GTFS Test Editor</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚇</text></svg>">
+</head>
+<body>
+<header id="topbar">
+    <div class="brand">🚇 GTFS Test Editor</div>
+    <div class="topbar-actions">
+        <button id="btn-new" title="Start a fresh test case">New</button>
+        <select id="sel-example" title="Load a built-in example test case as a starting point">
+            <option value="">Load example…</option>
+        </select>
+        <button id="btn-import" title="Import a test case (.json) or a GTFS/submission zip">Import</button>
+        <button id="btn-export" title="Save the whole test case as a single .json file">Export JSON</button>
+        <button id="btn-generate" class="primary" title="Download the submission files (act.txt, comment.txt, arrange.zip, assert.*)">⬇ Generate</button>
+        <div id="lang-toggle" title="Language of hints and messages">
+            <button data-lang="en" class="active">EN</button>
+            <button data-lang="hu">HU</button>
+        </div>
+        <span id="status-chip" class="chip ok" title="Validation status">✓</span>
+    </div>
+    <input type="file" id="file-input" accept=".json,.zip" hidden>
+</header>
+
+<div id="layout">
+    <aside id="sidebar"></aside>
+
+    <main id="map-area">
+        <div id="map-toolbar">
+            <div class="tabs" id="model-tabs">
+                <button class="tab active" data-tab="arrange">Arrange</button>
+                <button class="tab" data-tab="expected">Expected</button>
+            </div>
+            <div class="map-tools">
+                <span id="cursor-pos" class="muted"></span>
+                <button id="btn-fit" title="Zoom to fit all stations">Fit view</button>
+            </div>
+        </div>
+        <div id="map-wrap">
+            <svg id="map" xmlns="http://www.w3.org/2000/svg">
+                <g id="layer-grid"></g>
+                <g id="layer-act"></g>
+                <g id="layer-lines"></g>
+                <g id="layer-stations"></g>
+            </svg>
+            <div id="map-message" hidden></div>
+            <div id="map-hint" class="muted">Drag stations to move them · double-click to add a station · scroll to zoom</div>
+        </div>
+    </main>
+</div>
+
+<div id="toasts"></div>
+
+<script src="js/i18n.js"></script>
+<script src="js/geo.js"></script>
+<script src="js/csv.js"></script>
+<script src="js/zip.js"></script>
+<script src="js/model.js"></script>
+<script src="js/gtfs.js"></script>
+<script src="js/act-visuals.js"></script>
+<script src="js/map.js"></script>
+<script src="js/sidebar.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

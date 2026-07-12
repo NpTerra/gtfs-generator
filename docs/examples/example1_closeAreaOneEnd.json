@@ -1,0 +1,174 @@
+{
+  "version": 1,
+  "name": "example1_closeAreaOneEnd",
+  "description": "Szintetikus tanulópélda: építsd át sajátra beadás előtt!\nA lezárt területbe a vonal egyik vége esik, és az érintett megállók a vonalon egymás után következnek.\nAzt várjuk, hogy a vonal megmarad, de az érintett megállók lekerülnek róla, és törlődnek a modellből is, mert nem marad vonaluk.",
+  "act": "CLOSE_AREA\nPort;25",
+  "randomizeOffsets": true,
+  "agency": {
+    "name": "Your Transit Agency",
+    "url": "http://www.yourtransitagency.com",
+    "timezone": "America/New_York",
+    "language": "en",
+    "phone": ""
+  },
+  "arrange": {
+    "stations": [
+      {
+        "id": 1,
+        "name": "Port",
+        "coordMode": "xy",
+        "x": 0,
+        "y": 40
+      },
+      {
+        "id": 2,
+        "name": "Market",
+        "coordMode": "xy",
+        "x": 0,
+        "y": 20
+      },
+      {
+        "id": 3,
+        "name": "School",
+        "coordMode": "xy",
+        "x": 0,
+        "y": 0
+      },
+      {
+        "id": 4,
+        "name": "Park",
+        "coordMode": "xy",
+        "x": 20,
+        "y": 0
+      },
+      {
+        "id": 5,
+        "name": "Bath",
+        "coordMode": "xy",
+        "x": 40,
+        "y": 0
+      }
+    ],
+    "lines": [
+      {
+        "id": 1,
+        "name": "V1",
+        "shortName": "V1",
+        "color": "#00AA55",
+        "type": 0,
+        "stops": [
+          {
+            "stationId": 1,
+            "arrival": "08:00:00",
+            "departure": "08:00:00"
+          },
+          {
+            "stationId": 2,
+            "arrival": "08:00:00",
+            "departure": "08:00:00"
+          },
+          {
+            "stationId": 3,
+            "arrival": "08:00:00",
+            "departure": "08:00:00"
+          },
+          {
+            "stationId": 4,
+            "arrival": "08:00:00",
+            "departure": "08:00:00"
+          },
+          {
+            "stationId": 5,
+            "arrival": "08:00:00",
+            "departure": "08:00:00"
+          }
+        ]
+      }
+    ],
+    "calendars": [
+      {
+        "id": 1,
+        "start": "2025-09-01",
+        "end": "2026-01-31",
+        "availability": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    ],
+    "trips": [
+      {
+        "id": 1,
+        "line": 1,
+        "service": 1
+      }
+    ]
+  },
+  "expected": {
+    "type": "model",
+    "model": {
+      "stations": [
+        {
+          "id": 3,
+          "name": "School",
+          "coordMode": "xy",
+          "x": 0,
+          "y": 0
+        },
+        {
+          "id": 4,
+          "name": "Park",
+          "coordMode": "xy",
+          "x": 20,
+          "y": 0
+        },
+        {
+          "id": 5,
+          "name": "Bath",
+          "coordMode": "xy",
+          "x": 40,
+          "y": 0
+        }
+      ],
+      "lines": [
+        {
+          "id": 1,
+          "name": "V1",
+          "shortName": "V1",
+          "color": "#00AA55",
+          "type": 0,
+          "stops": [
+            {
+              "stationId": 3,
+              "arrival": "08:00:00",
+              "departure": "08:00:00"
+            },
+            {
+              "stationId": 4,
+              "arrival": "08:00:00",
+              "departure": "08:00:00"
+            },
+            {
+              "stationId": 5,
+              "arrival": "08:00:00",
+              "departure": "08:00:00"
+            }
+          ]
+        }
+      ],
+      "calendars": [],
+      "trips": [
+        {
+          "id": 1,
+          "line": 1,
+          "service": 1
+        }
+      ]
+    }
+  }
+}

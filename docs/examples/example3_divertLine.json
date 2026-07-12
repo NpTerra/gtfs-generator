@@ -1,0 +1,263 @@
+{
+  "version": 1,
+  "name": "example3_divertLine",
+  "description": "Szintetikus tanulópélda: építsd át sajátra beadás előtt!\nA Z2 vonal sikeres átterelése a Walk;Tower;Campus útvonalra (a kiválasztott megállók a Z9 vonalon szomszédosak).\nA kimaradó Theater megálló vonal nélkül marad, ezért törlődik a modellből.",
+  "act": "DIVERT_LINE\nZ2;Walk;Tower;Campus",
+  "randomizeOffsets": true,
+  "agency": {
+    "name": "Your Transit Agency",
+    "url": "http://www.yourtransitagency.com",
+    "timezone": "America/New_York",
+    "language": "en",
+    "phone": ""
+  },
+  "arrange": {
+    "stations": [
+      {
+        "id": 1,
+        "name": "Harbor",
+        "coordMode": "xy",
+        "x": 0,
+        "y": 0
+      },
+      {
+        "id": 2,
+        "name": "Walk",
+        "coordMode": "xy",
+        "x": 20,
+        "y": 10
+      },
+      {
+        "id": 3,
+        "name": "Theater",
+        "coordMode": "xy",
+        "x": 40,
+        "y": 20
+      },
+      {
+        "id": 4,
+        "name": "Campus",
+        "coordMode": "xy",
+        "x": 60,
+        "y": 30
+      },
+      {
+        "id": 5,
+        "name": "Stadium",
+        "coordMode": "xy",
+        "x": 80,
+        "y": 40
+      },
+      {
+        "id": 6,
+        "name": "Tower",
+        "coordMode": "xy",
+        "x": 40,
+        "y": 45
+      }
+    ],
+    "lines": [
+      {
+        "id": 1,
+        "name": "Z2",
+        "shortName": "Z2",
+        "color": "#1155CC",
+        "type": 3,
+        "stops": [
+          {
+            "stationId": 1,
+            "arrival": "08:00:00",
+            "departure": "08:00:00"
+          },
+          {
+            "stationId": 2,
+            "arrival": "08:00:00",
+            "departure": "08:00:00"
+          },
+          {
+            "stationId": 3,
+            "arrival": "08:00:00",
+            "departure": "08:00:00"
+          },
+          {
+            "stationId": 4,
+            "arrival": "08:00:00",
+            "departure": "08:00:00"
+          },
+          {
+            "stationId": 5,
+            "arrival": "08:00:00",
+            "departure": "08:00:00"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "name": "Z9",
+        "shortName": "Z9",
+        "color": "#CC3344",
+        "type": 3,
+        "stops": [
+          {
+            "stationId": 2,
+            "arrival": "08:00:00",
+            "departure": "08:00:00"
+          },
+          {
+            "stationId": 6,
+            "arrival": "08:00:00",
+            "departure": "08:00:00"
+          },
+          {
+            "stationId": 4,
+            "arrival": "08:00:00",
+            "departure": "08:00:00"
+          }
+        ]
+      }
+    ],
+    "calendars": [
+      {
+        "id": 1,
+        "start": "2025-09-01",
+        "end": "2026-01-31",
+        "availability": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          0,
+          0
+        ]
+      }
+    ],
+    "trips": [
+      {
+        "id": 1,
+        "line": 1,
+        "service": 1
+      },
+      {
+        "id": 2,
+        "line": 2,
+        "service": 1
+      }
+    ]
+  },
+  "expected": {
+    "type": "model",
+    "model": {
+      "stations": [
+        {
+          "id": 1,
+          "name": "Harbor",
+          "coordMode": "xy",
+          "x": 0,
+          "y": 0
+        },
+        {
+          "id": 2,
+          "name": "Walk",
+          "coordMode": "xy",
+          "x": 20,
+          "y": 10
+        },
+        {
+          "id": 4,
+          "name": "Campus",
+          "coordMode": "xy",
+          "x": 60,
+          "y": 30
+        },
+        {
+          "id": 5,
+          "name": "Stadium",
+          "coordMode": "xy",
+          "x": 80,
+          "y": 40
+        },
+        {
+          "id": 6,
+          "name": "Tower",
+          "coordMode": "xy",
+          "x": 40,
+          "y": 45
+        }
+      ],
+      "lines": [
+        {
+          "id": 1,
+          "name": "Z2",
+          "shortName": "Z2",
+          "color": "#1155CC",
+          "type": 3,
+          "stops": [
+            {
+              "stationId": 1,
+              "arrival": "08:00:00",
+              "departure": "08:00:00"
+            },
+            {
+              "stationId": 2,
+              "arrival": "08:00:00",
+              "departure": "08:00:00"
+            },
+            {
+              "stationId": 6,
+              "arrival": "08:00:00",
+              "departure": "08:00:00"
+            },
+            {
+              "stationId": 4,
+              "arrival": "08:00:00",
+              "departure": "08:00:00"
+            },
+            {
+              "stationId": 5,
+              "arrival": "08:00:00",
+              "departure": "08:00:00"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "name": "Z9",
+          "shortName": "Z9",
+          "color": "#CC3344",
+          "type": 3,
+          "stops": [
+            {
+              "stationId": 2,
+              "arrival": "08:00:00",
+              "departure": "08:00:00"
+            },
+            {
+              "stationId": 6,
+              "arrival": "08:00:00",
+              "departure": "08:00:00"
+            },
+            {
+              "stationId": 4,
+              "arrival": "08:00:00",
+              "departure": "08:00:00"
+            }
+          ]
+        }
+      ],
+      "calendars": [],
+      "trips": [
+        {
+          "id": 1,
+          "line": 1,
+          "service": 1
+        },
+        {
+          "id": 2,
+          "line": 2,
+          "service": 1
+        }
+      ]
+    }
+  }
+}
