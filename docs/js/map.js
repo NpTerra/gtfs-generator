@@ -225,8 +225,35 @@
 
     function initEvents() {
         let drag = null; // {type:'pan'|'station', ...}
+        const touches = new Map(); // active touch pointers: pointerId -> screen point
+        let pinch = null; // {dist, scale, wx, wy} — start distance/scale + world point under the midpoint
+
+        // (re)anchor the pinch to the current first two fingers, e.g. when a finger lands or lifts
+        function rebasePinch() {
+            const [a, b] = touches.values();
+            const mid = screenToWorld((a.x + b.x) / 2, (a.y + b.y) / 2);
+            pinch = {
+                dist: Math.max(Math.hypot(a.x - b.x, a.y - b.y), 1),
+                scale: view.scale, wx: mid.x, wy: mid.y
+            };
+        }
 
         svg.addEventListener("pointerdown", (ev) => {
+            if (ev.pointerType === "touch") {
+                touches.set(ev.pointerId, eventPoint(ev));
+                if (touches.size >= 2) {
+                    // second finger turns any drag into a pinch; undo a half-dragged station
+                    if (drag?.type === "station" && drag.moved) {
+                        cb.onStationMoved(drag.station, drag.origX, drag.origY, false);
+                        render();
+                    }
+                    drag = null;
+                    svg.classList.remove("panning");
+                    rebasePinch();
+                    svg.setPointerCapture(ev.pointerId);
+                    return;
+                }
+            }
             if (ev.button !== 0) return;
             const pt = eventPoint(ev);
             const stationId = ev.target.dataset?.stationId;
@@ -237,6 +264,7 @@
                 const w = screenToWorld(pt.x, pt.y);
                 drag = {
                     type: "station", station,
+                    origX: station.x, origY: station.y,
                     offX: station.x - w.x, offY: station.y - w.y,
                     moved: false
                 };
@@ -248,6 +276,20 @@
         });
 
         svg.addEventListener("pointermove", (ev) => {
+            if (ev.pointerType === "touch" && touches.has(ev.pointerId))
+                touches.set(ev.pointerId, eventPoint(ev));
+            if (pinch) {
+                if (!touches.has(ev.pointerId)) return;
+                const [a, b] = touches.values();
+                const dist = Math.hypot(a.x - b.x, a.y - b.y);
+                view.scale = Math.max(0.0005, Math.min(400, pinch.scale * dist / pinch.dist));
+                // keep the world point that started under the fingers' midpoint under it
+                const { w, h } = size();
+                view.cx = pinch.wx - ((a.x + b.x) / 2 - w / 2) / view.scale;
+                view.cy = pinch.wy + ((a.y + b.y) / 2 - h / 2) / view.scale;
+                render();
+                return;
+            }
             const pt = eventPoint(ev);
             const w = screenToWorld(pt.x, pt.y);
             updateCursorReadout(w);
@@ -269,7 +311,26 @@
             }
         });
 
+        // returns true if the lifted pointer belonged to an active pinch
+        function liftPointer(ev) {
+            if (ev.pointerType !== "touch" || !touches.delete(ev.pointerId) || !pinch)
+                return false;
+            if (touches.size >= 2) {
+                rebasePinch();
+            } else {
+                pinch = null;
+                if (touches.size === 1) {
+                    // hand off to a one-finger pan without a jump
+                    const [pt] = touches.values();
+                    drag = { type: "pan", startX: pt.x, startY: pt.y, cx: view.cx, cy: view.cy, moved: true };
+                    svg.classList.add("panning");
+                }
+            }
+            return true;
+        }
+
         svg.addEventListener("pointerup", (ev) => {
+            if (liftPointer(ev)) return;
             if (!drag) return;
             svg.classList.remove("panning");
             if (drag.type === "station") {
@@ -281,7 +342,8 @@
             drag = null;
         });
 
-        svg.addEventListener("pointercancel", () => {
+        svg.addEventListener("pointercancel", (ev) => {
+            if (liftPointer(ev)) return;
             svg.classList.remove("panning");
             drag = null;
         });

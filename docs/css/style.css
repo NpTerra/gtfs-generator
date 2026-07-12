@@ -23,7 +23,7 @@ html, body {
     background: var(--bg);
 }
 
-body { display: flex; flex-direction: column; overflow: hidden; }
+body { display: flex; flex-direction: column; overflow: hidden; height: 100dvh; }
 
 /* ---------- top bar ---------- */
 
@@ -442,3 +442,33 @@ input[type="color"]::-webkit-color-swatch { border: none; border-radius: 4px; }
 }
 .toast.error { background: #7f1d1d; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+
+/* ---------- small screens ---------- */
+
+@media (max-width: 768px) {
+    #topbar { flex-wrap: wrap; padding: 6px 10px; row-gap: 6px; }
+    .topbar-actions { gap: 6px; }
+    #topbar button, #topbar select { padding: 5px 9px; }
+    #topbar select { max-width: 150px; }
+
+    /* map on top, sidebar as a scrollable bottom panel */
+    #layout { flex-direction: column; }
+    #map-area { order: 1; flex: 1 1 55%; min-height: 0; }
+    #sidebar {
+        order: 2;
+        flex: 1 1 45%;
+        width: auto;
+        min-width: 0;
+        min-height: 0;
+        border-right: none;
+        border-top: 1px solid var(--border);
+    }
+
+    #map-toolbar { flex-wrap: wrap; padding: 6px 8px; }
+    /* mouse-hover readout and desktop-only hints are dead weight on touch */
+    #cursor-pos { display: none; }
+    #map-hint { display: none; }
+
+    #toasts { left: 16px; }
+    .toast { max-width: none; }
+}
