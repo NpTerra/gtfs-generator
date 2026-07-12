@@ -23,7 +23,9 @@ html, body {
     background: var(--bg);
 }
 
-body { display: flex; flex-direction: column; overflow: hidden; height: 100dvh; }
+/* no overflow:hidden here — it would propagate to the viewport and kill
+   pull-to-refresh on mobile; children size to 100dvh so nothing overflows */
+body { display: flex; flex-direction: column; height: 100dvh; }
 
 /* ---------- top bar ---------- */
 
