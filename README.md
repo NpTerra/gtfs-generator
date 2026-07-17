@@ -1,6 +1,6 @@
 # GTFS Test Generator
 
-Tools for creating GTFS test cases (arrange / act / assert) for the Szoftech university assignment, so you don't have to hand-write `stops.txt`, `stop_times.txt` and friends.
+A visual tool for creating GTFS test cases (arrange / act / assert) for the Szoftech university assignment, so you don't have to hand-write `stops.txt`, `stop_times.txt` and friends.
 
 ## 🌐 Web editor (nothing to install)
 
@@ -74,7 +74,6 @@ If you serve `docs/` some other way instead, two things to know:
 - `docs/examples/`: the *Load example…* entries as plain test-case `.json` files (exactly what Export JSON produces). New files are picked up automatically on refresh; see Hosting.
 - `Dockerfile` + `deploy/nginx.conf`: container serving `docs/` with nginx, example auto-detection preconfigured (see Hosting)
 - `tools/check.js`: the test suite. Validates every example and, if a local `submitted-tests/` folder exists, round-trips the generator against real submissions.
-- `src/`: the legacy Java/JavaFX generator
 
 ## Extra resources
 
