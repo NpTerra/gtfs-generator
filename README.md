@@ -25,6 +25,7 @@ Open the editor in your browser at the hosted instance your instructor/maintaine
   `comment.txt`, `act.txt`, `arrange.zip`, and `assert.zip` *or* `assert.txt`. Unzip it into your submission directory and you're done.
 - **Random GPS offsets** (optional, on by default) shift all coordinates by a whole number of degrees on every generate, so identical station layouts still produce unique submissions. Relative distances are unaffected.
 - **Examples built in**: *Load example* in the test-name menu (top left) contains synthetic test cases modeled on real, accepted submissions (same transformations, different layouts). Use them to learn the format, then build your own.
+- **Import from a real GTFS feed**: the import button on the Model panel's header reads a full GTFS zip (a city's whole network works, hundreds of MB included) and lets you pick routes. They replace the Arrange or Expected model, whichever tab is open; platforms are merged into their stations, and each line uses its route's longest trip. Your agency settings stay as they are.
 - **Import old work**: besides `.json`, *Import…* in the same menu also accepts a previously generated submission zip (`act.txt` + `arrange.zip` + …) or a bare GTFS zip, and reconstructs an editable test case from it.
 - Your work is **autosaved** in the browser (localStorage), so an accidental refresh loses nothing.
 
@@ -58,7 +59,7 @@ npm run preview    # serve dist/ locally
 
 The built `dist/` must be served over http (ES modules don't load from `file://`).
 
-**Tests** (`tests/`): every example must validate, survive a JSON round trip and generate. If you keep real, accepted submissions in a local `submitted-tests/` folder (one directory per test with `act.txt`, `arrange.zip`, …), each one is also imported, regenerated and compared with the original. That folder is gitignored and never enters the Docker image.
+**Tests** (`tests/`): every example must validate, survive a JSON round trip and generate; `feed.test.ts` covers importing from real feeds. If you keep real, accepted submissions in a local `submitted-tests/` folder (one directory per test with `act.txt`, `arrange.zip`, …), each one is also imported, regenerated and compared with the original. That folder is gitignored and never enters the Docker image.
 
 **Examples** (`examples/`): the *Load example* entries, as plain test-case `.json` files (exactly what Export JSON produces). They are bundled at build time, so adding one means committing the file and redeploying.
 

@@ -173,11 +173,9 @@ export function changeCalendarId(model: Model, calendar: Calendar, newId: number
   return true
 }
 
-const LINE_PALETTE = ['#AABBCC', '#FF00FF', '#00AA55', '#FF7700', '#3355FF', '#BB2222']
-
 export function addLine(model: Model) {
   const id = M.nextId(model.lines)
-  model.lines.push({ id, name: 'L' + id, shortName: 'L' + id, color: LINE_PALETTE[(id - 1) % LINE_PALETTE.length], type: 1, stops: [] })
+  model.lines.push({ id, name: 'L' + id, shortName: 'L' + id, color: M.LINE_COLORS[(id - 1) % M.LINE_COLORS.length], type: 1, stops: [] })
 }
 
 export function addCalendar(model: Model) {
@@ -192,4 +190,19 @@ export function calendarsFor(model: Model): Calendar[] {
 export function addTrip(model: Model) {
   const trip: Trip = { id: M.nextId(model.trips), line: model.lines[0]?.id ?? 1, service: calendarsFor(model)[0]?.id ?? 1 }
   model.trips.push(trip)
+}
+
+// replaces the model of one tab (e.g. with routes imported from a GTFS feed); undoable
+export function replaceModel(target: 'arrange' | 'expected', model: Model) {
+  if (target === 'expected') {
+    tc.value.expected.type = 'model'
+    tc.value.expected.model = model
+  } else {
+    tc.value.arrange = model
+  }
+  tab.value = target
+  selection.value = null
+  pickLineId.value = null
+  loadCount.value++ // the map re-fits to the new stations
+  commit()
 }

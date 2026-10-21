@@ -14,6 +14,8 @@ defineProps<{ title: string; panel: PanelName; highlight?: boolean }>()
     :class="highlight && 'text-link'"
   >
     <span class="truncate"><slot>{{ title }}</slot></span>
+    <div class="flex shrink-0 items-center">
+    <slot name="actions" />
     <Button
       variant="ghost" size="icon-sm" class="text-muted-foreground max-md:hidden"
       :title="`Hide the ${title} panel`" :aria-label="`Hide the ${title} panel`"
@@ -21,5 +23,6 @@ defineProps<{ title: string; panel: PanelName; highlight?: boolean }>()
     >
       <MinusIcon />
     </Button>
+    </div>
   </div>
 </template>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Right panel: the GTFS model of the active tab (Arrange or Expected).
-import { PlusIcon, XIcon } from '@lucide/vue'
-import { computed } from 'vue'
+import { FileInputIcon, PlusIcon, XIcon } from '@lucide/vue'
+import { computed, ref } from 'vue'
 import CalendarCard from '@/components/CalendarCard.vue'
 import LineCard from '@/components/LineCard.vue'
 import PanelHeader from '@/components/PanelHeader.vue'
@@ -13,12 +13,20 @@ import { NativeSelect } from '@/components/ui/native-select'
 import {
   addCalendar, addLine, addStation, addTrip, calendarsFor, canEdit, editableModel, remove, tab, tc,
 } from '@/composables/useEditor'
+import { openGtfsImport } from '@/composables/useGtfsImport'
 import { freeSpot } from '@/composables/useViewport'
 import { t } from '@/lib/i18n'
 
 const model = editableModel
 const isExpected = computed(() => tab.value === 'expected')
 const calendars = computed(() => calendarsFor(model.value))
+
+const gtfsInput = ref<HTMLInputElement>()
+function onGtfsPicked() {
+  const file = gtfsInput.value?.files?.[0]
+  if (file) openGtfsImport(file)
+  gtfsInput.value!.value = ''
+}
 
 function addStationHere() {
   const p = freeSpot(model.value.stations)
@@ -28,7 +36,19 @@ function addStationHere() {
 
 <template>
   <aside class="flex h-full min-h-0 flex-col bg-surface" aria-label="Model">
-    <PanelHeader :title="isExpected ? 'Expected model (after the act)' : 'Arrange model'" panel="model" :highlight="isExpected" />
+    <PanelHeader :title="isExpected ? 'Expected model (after the act)' : 'Arrange model'" panel="model" :highlight="isExpected">
+      <template #actions>
+        <!-- tool-window action, like IntelliJ's header icons: replace this model from a GTFS feed -->
+        <Button
+          variant="ghost" size="icon-sm" class="text-muted-foreground"
+          :title="`Import routes from a GTFS zip into the ${isExpected ? 'Expected' : 'Arrange'} model`"
+          aria-label="Import routes from a GTFS zip" @click="gtfsInput?.click()"
+        >
+          <FileInputIcon />
+        </Button>
+        <input ref="gtfsInput" type="file" accept=".zip" hidden @change="onGtfsPicked">
+      </template>
+    </PanelHeader>
 
     <p v-if="!canEdit" class="px-3 py-8 text-center text-sm text-muted-foreground">
       {{ t('map.exceptionMsg', { name: tc.expected.exception }) }}

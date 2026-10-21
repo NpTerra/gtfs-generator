@@ -7,7 +7,8 @@ import * as gtfs from '@/lib/gtfs'
 import * as M from '@/lib/model'
 import * as zip from '@/lib/zip'
 import { confirmDialog } from './useConfirm'
-import { loadTestCase, problems, setTab, tab, tc } from './useEditor'
+import { loadTestCase, problems, tc } from './useEditor'
+import { openGtfsImport } from './useGtfsImport'
 import { showPanel } from './usePanels'
 import { openSections } from './useSections'
 
@@ -84,19 +85,8 @@ export async function importFile(file: File) {
     }
 
     if (files['stops.txt']) {
-      // a bare GTFS zip replaces the model of the active tab
-      const target = tab.value
-      if (!await confirmDialog(t('dlg.gtfsReplace', { target: target.toUpperCase() }))) return
-      const { model, agency } = gtfs.importGTFS(files)
-      if (target === 'expected') {
-        tc.value.expected.type = 'model'
-        tc.value.expected.model = model
-      } else {
-        tc.value.arrange = model
-        if (agency) tc.value.agency = agency
-      }
-      setTab(target)
-      toast(t('toast.importedGtfs', { target }))
+      // a bare GTFS feed: pick routes to replace the active tab's model with
+      await openGtfsImport(files, file.name)
       return
     }
 

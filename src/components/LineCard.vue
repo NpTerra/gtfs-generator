@@ -9,6 +9,7 @@ import { changeLineId, deleteLine, pickLineId } from '@/composables/useEditor'
 import { t } from '@/lib/i18n'
 import type { Line, Model } from '@/lib/model'
 import { appendStop } from '@/lib/model'
+import { inkFor } from '@/lib/utils'
 
 const props = defineProps<{ line: Line; model: Model }>()
 
@@ -20,11 +21,7 @@ const ROUTE_TYPES: [number, string][] = [
 
 // the route bullet: the short name on the line's color, like a transit sign
 const color = computed(() => /^#[0-9a-fA-F]{6}$/.test(props.line.color) ? props.line.color : '#555555')
-const bulletText = computed(() => {
-  const n = parseInt(color.value.slice(1), 16)
-  const [r, g, b] = [n >> 16, (n >> 8) & 255, n & 255]
-  return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? '#16181d' : '#ffffff' // readable on light or dark lines
-})
+const bulletText = computed(() => inkFor(color.value))
 
 function move(i: number, delta: number) {
   const stops = props.line.stops

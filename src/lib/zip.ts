@@ -91,8 +91,8 @@ async function inflateRaw(data: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer())
 }
 
-// Reads a ZIP archive into { name: bytes }.
-export async function read(bytes: Uint8Array): Promise<Record<string, Uint8Array>> {
+// Reads a ZIP archive into { name: bytes }; `only` can skip entries that aren't needed.
+export async function read(bytes: Uint8Array, only?: (name: string) => boolean): Promise<Record<string, Uint8Array>> {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const decoder = new TextDecoder()
 
@@ -122,7 +122,7 @@ export async function read(bytes: Uint8Array): Promise<Record<string, Uint8Array
     const dataStart = localOffset + 30 + localNameLen + localExtraLen
     const data = bytes.subarray(dataStart, dataStart + compSize)
 
-    if (!name.endsWith('/')) {
+    if (!name.endsWith('/') && (!only || only(name))) {
       if (method === 0) files[name] = data.slice()
       else if (method === 8) files[name] = await inflateRaw(data)
       else throw new Error(`Unsupported compression method ${method} for "${name}".`)

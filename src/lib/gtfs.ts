@@ -104,7 +104,8 @@ export function buildTestFiles(tc: TestCase, offset?: Offset): zip.ZipEntry[] {
 
 // ---- GTFS -> model (import) -----------------------------------------------------
 
-function numericId(text: string | undefined, used: Set<number>): number {
+// "S12" -> 12; falls back to the first free number when not numeric or taken
+export function numericId(text: string | undefined, used: Set<number>): number {
   const m = String(text ?? '').match(/^[A-Za-z]*0*(\d+)$/)
   let id = m ? parseInt(m[1], 10) : null
   if (id === null || used.has(id)) {

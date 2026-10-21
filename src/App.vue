@@ -7,6 +7,7 @@ import 'vue-sonner/style.css'
 import { ChevronUpIcon, CircleXIcon, ClipboardListIcon, TriangleAlertIcon, WaypointsIcon } from '@lucide/vue'
 import AppHeader from '@/components/AppHeader.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import GtfsImportDialog from '@/components/GtfsImportDialog.vue'
 import MapPane from '@/components/MapPane.vue'
 import ModelPanel from '@/components/ModelPanel.vue'
 import ProblemsPanel from '@/components/ProblemsPanel.vue'
@@ -123,6 +124,7 @@ useEventListener(document, 'keydown', (ev: KeyboardEvent) => {
 
     <StatusBar />
     <ConfirmDialog />
+    <GtfsImportDialog />
     <Toaster position="bottom-right" rich-colors />
   </div>
 </template>

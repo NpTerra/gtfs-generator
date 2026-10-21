@@ -42,6 +42,9 @@ export const KNOWN_EXCEPTIONS = [
   'NOT_NEIGHBOR_STATIONS_IN_SELECTION',
 ]
 
+// default colors for new lines (and imported routes without route_color)
+export const LINE_COLORS = ['#AABBCC', '#FF00FF', '#00AA55', '#FF7700', '#3355FF', '#BB2222']
+
 export function round6(v: number): number {
   return Math.round(v * 1e6) / 1e6
 }
