@@ -1,3 +1,6 @@
+### Real submissions: local test corpus only, never commit ###
+submitted-tests/
+
 ### IntelliJ IDEA ###
 .idea/modules.xml
 .idea/jarRepositories.xml
