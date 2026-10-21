@@ -10,7 +10,12 @@
         state: {
             tc: null,
             tab: "arrange",       // which model the map + sidebar edit
-            selection: null       // selected station id (of the active model)
+            selection: null,      // selected station id (of the active model)
+            pickLine: null        // line that map clicks append stops to
+        },
+
+        canEdit() {
+            return !(this.state.tab === "expected" && this.state.tc.expected.type === "exception");
         },
 
         editableModel() {
@@ -26,14 +31,31 @@
 
         // heavy update: rebuild the whole sidebar too
         structure() {
+            if (!this.editableModel().lines.includes(this.state.pickLine)) this.state.pickLine = null;
             G.sidebar.render(this);
             G.mapview.render();
             this.renderValidation();
-            autosave();
+            renderBanner();
+            document.getElementById("btn-add-station").disabled = !this.canEdit();
+            commit(); // discrete action: undoable right away, unlike debounced typing
+        },
+
+        addStation(x, y) {
+            const model = this.editableModel();
+            const id = M.nextId(model.stations);
+            model.stations.push(M.makeStation(id, M.nextStationName(model.stations), x, y));
+            this.state.selection = id;
+            this.structure();
+        },
+
+        // line: start appending map-clicked stations to it; null: stop
+        setPickLine(line) {
+            this.state.pickLine = line;
+            this.structure();
         },
 
         refreshSelection() {
-            document.querySelectorAll("#sidebar .card.selected")
+            document.querySelectorAll("#model-body .card.selected")
                 .forEach(c => c.classList.remove("selected"));
             if (this.state.selection !== null)
                 document.getElementById("station-card-" + this.state.selection)
@@ -44,7 +66,7 @@
         setTab(tab) {
             const changed = this.state.tab !== tab;
             this.state.tab = tab;
-            if (changed) this.state.selection = null;
+            if (changed) { this.state.selection = null; this.state.pickLine = null; }
             document.querySelectorAll("#model-tabs .tab").forEach(b =>
                 b.classList.toggle("active", b.dataset.tab === tab));
             this.structure();
@@ -126,30 +148,33 @@
             const warnings = problems.length - errors;
 
             const chip = document.getElementById("status-chip");
+            chip.setAttribute("aria-label", `${errors} errors, ${warnings} warnings`);
+            const icon = G.sidebar.icon;
             if (errors > 0) {
                 chip.className = "chip error";
-                chip.textContent = `✖ ${errors}`;
+                chip.replaceChildren(icon("error"), String(errors));
             } else if (warnings > 0) {
                 chip.className = "chip warn";
-                chip.textContent = `⚠ ${warnings}`;
+                chip.replaceChildren(icon("warning"), String(warnings));
             } else {
                 chip.className = "chip ok";
-                chip.textContent = "✓";
+                chip.replaceChildren(icon("check"));
             }
 
+            document.getElementById("problems-count").textContent = `(${problems.length})`;
             const body = document.getElementById("problems-body");
             if (body) {
                 body.replaceChildren();
                 if (problems.length === 0) {
                     const ok = document.createElement("div");
                     ok.className = "problem-none";
-                    ok.textContent = t("problems.none");
+                    ok.append(icon("check"), t("problems.none"));
                     body.append(ok);
                 } else {
                     for (const p of problems) {
                         const div = document.createElement("div");
                         div.className = "problem " + p.level;
-                        div.append(p.text);
+                        div.append(icon(p.level === "error" ? "error" : "warning"), p.text);
                         body.append(div);
                     }
                 }
@@ -160,13 +185,58 @@
 
     // ---- autosave --------------------------------------------------------------
 
+    // Every change funnels through commit(), directly or via the debounced
+    // autosave(), so undo history is recorded there: a burst of typing
+    // becomes a single undo step.
+
+    const history = { undo: [], redo: [], current: null };
     let autosaveTimer = null;
+
     function autosave() {
         clearTimeout(autosaveTimer);
-        autosaveTimer = setTimeout(() => {
-            try { localStorage.setItem(AUTOSAVE_KEY, M.toJSON(app.state.tc)); }
-            catch { /* storage full / disabled */ }
-        }, 300);
+        autosaveTimer = setTimeout(commit, 300);
+    }
+
+    function commit() {
+        clearTimeout(autosaveTimer);
+        const json = M.toJSON(app.state.tc);
+        if (json === history.current) return;
+        if (history.current !== null) {
+            history.undo.push(history.current);
+            if (history.undo.length > 100) history.undo.shift();
+            history.redo = [];
+        }
+        history.current = json;
+        updateHistoryButtons();
+        try { localStorage.setItem(AUTOSAVE_KEY, json); }
+        catch { /* storage full / disabled */ }
+    }
+
+    function stepHistory(from, to) {
+        commit(); // a pending edit becomes undoable first
+        if (from.length === 0) return;
+        to.push(history.current);
+        history.current = from.pop();
+        app.state.tc = M.fromJSON(history.current);
+        app.state.selection = null;
+        app.structure();
+        updateHistoryButtons();
+        try { localStorage.setItem(AUTOSAVE_KEY, history.current); } catch { }
+    }
+
+    const undo = () => stepHistory(history.undo, history.redo);
+    const redo = () => stepHistory(history.redo, history.undo);
+
+    function updateHistoryButtons() {
+        document.getElementById("btn-undo").disabled = history.undo.length === 0;
+        document.getElementById("btn-redo").disabled = history.redo.length === 0;
+    }
+
+    function renderBanner() {
+        const banner = document.getElementById("map-banner");
+        const line = app.state.pickLine;
+        banner.hidden = !line;
+        if (line) banner.querySelector("span").textContent = t("map.picking", { name: line.name });
     }
 
     // ---- helpers ------------------------------------------------------------------
@@ -192,15 +262,9 @@
     function loadTestCase(tc) {
         app.state.tc = tc;
         app.state.selection = null;
+        app.state.pickLine = null;
         app.setTab("arrange");
         G.mapview.fit();
-    }
-
-    function autoName(index) {
-        let name = "";
-        let n = index;
-        do { name = String.fromCharCode(65 + (n % 26)) + name; n = Math.floor(n / 26) - 1; } while (n >= 0);
-        return name;
     }
 
     // ---- import ---------------------------------------------------------------------
@@ -208,7 +272,9 @@
     async function importFile(file) {
         try {
             if (file.name.toLowerCase().endsWith(".json")) {
-                loadTestCase(M.fromJSON(await file.text()));
+                const tc = M.fromJSON(await file.text());
+                if (!confirm(t("dlg.importConfirm", { name: tc.name }))) return;
+                loadTestCase(tc);
                 toast(t("toast.importedJson", { name: app.state.tc.name }));
                 return;
             }
@@ -218,6 +284,7 @@
 
             if (files["act.txt"] || files["arrange.zip"]) {
                 // a full submission zip (act.txt + comment.txt + arrange.zip + assert.*)
+                if (!confirm(t("dlg.importConfirm", { name: file.name }))) return;
                 const dec = new TextDecoder();
                 const text = (name) => files[name] ? dec.decode(files[name]).replace(/\r\n/g, "\n").replace(/\n+$/, "") : "";
 
@@ -316,13 +383,13 @@
     }
 
     async function populateExamples() {
-        const sel = document.getElementById("sel-example");
+        const list = document.getElementById("menu-examples");
         const hint = (key) => {
-            const opt = document.createElement("option");
-            opt.disabled = true;
-            opt.dataset.i18n = key;
-            opt.textContent = t(key);
-            sel.append(opt);
+            const div = document.createElement("div");
+            div.className = "menu-hint";
+            div.dataset.i18n = key;
+            div.textContent = t(key);
+            list.append(div);
         };
 
         if (location.protocol === "file:") {
@@ -343,17 +410,25 @@
         }));
 
         const examples = loaded.filter(Boolean);
-        globalThis.GTG_EXAMPLES = examples.map(e => e.data);
         if (examples.length === 0) {
             hint("examples.none");
             return;
         }
-        examples.forEach((e, i) => {
-            const opt = document.createElement("option");
-            opt.value = i;
-            opt.textContent = e.data?.name ?? e.file;
-            sel.append(opt);
-        });
+        for (const e of examples) {
+            const btn = document.createElement("button");
+            btn.textContent = e.data?.name ?? e.file;
+            btn.addEventListener("click", () => {
+                closeMenu();
+                if (!confirm(t("dlg.exampleConfirm"))) return;
+                loadTestCase(M.fromJSON(JSON.stringify(e.data)));
+                toast(t("toast.exampleLoaded", { name: app.state.tc.name }));
+            });
+            list.append(btn);
+        }
+    }
+
+    function closeMenu() {
+        document.getElementById("file-menu").open = false;
     }
 
     // ---- generate -----------------------------------------------------------------------
@@ -364,6 +439,7 @@
         // hard gate: the assigned phone number must be filled in
         if (M.isPhoneMissing(tc.agency)) {
             alert(t("popup.phone"));
+            G.layout.show("test");
             const section = document.querySelector('details.section[data-id="agency"]');
             if (section) {
                 section.open = true;
@@ -376,7 +452,7 @@
         const problems = app.renderValidation();
         const errors = problems.filter(p => p.level === "error");
         if (errors.length > 0) {
-            document.querySelector('details.section[data-id="problems"]')?.setAttribute("open", "");
+            G.layout.show("problems");
             toast(t("toast.fixErrors", { n: errors.length }), true);
             return;
         }
@@ -403,22 +479,26 @@
     // ---- boot ------------------------------------------------------------------------------
 
     function init() {
+        G.layout.init();
+
         // map callbacks
         G.mapview.init({
             getTestCase: () => app.state.tc,
             getSelection: () => app.state.selection,
-            getModel: () => {
-                if (app.state.tab === "expected" && app.state.tc.expected.type === "exception")
-                    return null;
-                return app.editableModel();
-            },
+            getModel: () => app.canEdit() ? app.editableModel() : null,
+            getGhostModel: () => app.state.tab === "expected" ? app.state.tc.arrange : null,
             getMapMessage: () => {
                 if (app.state.tab === "expected" && app.state.tc.expected.type === "exception")
                     return t("map.exceptionMsg", { name: app.state.tc.expected.exception });
                 return "";
             },
-            canEdit: () => !(app.state.tab === "expected" && app.state.tc.expected.type === "exception"),
+            canEdit: () => app.canEdit(),
             onSelect: (id) => {
+                if (app.state.pickLine) {
+                    M.appendStop(app.state.pickLine, id);
+                    app.structure();
+                    return;
+                }
                 app.state.selection = id;
                 app.refreshSelection();
                 const section = document.querySelector('details.section[data-id="stations"]');
@@ -437,19 +517,18 @@
                         ? M.round6(key === "a" ? station.lat : station.lon)
                         : M.round6(key === "a" ? station.x : station.y);
                 }
-                if (committed) { app.renderValidation(); autosave(); }
+                if (committed) { app.renderValidation(); commit(); }
             },
-            onAddStation: (x, y) => {
-                const model = app.editableModel();
-                const id = M.nextId(model.stations);
-                const station = M.makeStation(id, autoName(model.stations.length), x, y);
-                model.stations.push(station);
-                app.state.selection = id;
-                app.structure();
-            }
+            onAddStation: (x, y) => app.addStation(x, y)
         });
 
         // toolbar
+        const menu = document.getElementById("file-menu");
+        document.addEventListener("click", (ev) => { if (!menu.contains(ev.target)) closeMenu(); });
+        menu.querySelector(".menu-list").addEventListener("click", (ev) => {
+            if (ev.target.closest("button")) closeMenu();
+        });
+
         document.getElementById("btn-new").addEventListener("click", () => {
             if (confirm(t("dlg.newConfirm")))
                 loadTestCase(M.defaultTestCase());
@@ -458,7 +537,7 @@
         // language toggle: translated hints/messages, structural labels stay English
         const applyStaticTexts = () => {
             document.getElementById("map-hint").textContent = t("map.hint");
-            document.querySelectorAll("#sel-example option[data-i18n]").forEach(o =>
+            document.querySelectorAll("#menu-examples [data-i18n]").forEach(o =>
                 o.textContent = t(o.dataset.i18n));
             document.querySelectorAll("#lang-toggle button").forEach(b =>
                 b.classList.toggle("active", b.dataset.lang === G.i18n.get()));
@@ -471,16 +550,7 @@
             }));
         applyStaticTexts();
 
-        const exampleSel = document.getElementById("sel-example");
         populateExamples();
-        exampleSel.addEventListener("change", () => {
-            const idx = exampleSel.value;
-            exampleSel.value = "";
-            if (idx === "") return;
-            if (!confirm(t("dlg.exampleConfirm"))) return;
-            loadTestCase(M.fromJSON(JSON.stringify(globalThis.GTG_EXAMPLES[idx])));
-            toast(t("toast.exampleLoaded", { name: app.state.tc.name }));
-        });
 
         const fileInput = document.getElementById("file-input");
         document.getElementById("btn-import").addEventListener("click", () => fileInput.click());
@@ -495,18 +565,37 @@
 
         document.getElementById("btn-generate").addEventListener("click", generate);
 
-        document.getElementById("status-chip").addEventListener("click", () => {
-            const section = document.querySelector('details.section[data-id="problems"]');
-            if (section) {
-                section.open = true;
-                section.scrollIntoView({ block: "nearest", behavior: "smooth" });
-            }
-        });
+        document.getElementById("status-chip").addEventListener("click", () => G.layout.show("problems"));
 
         document.querySelectorAll("#model-tabs .tab").forEach(btn =>
             btn.addEventListener("click", () => app.setTab(btn.dataset.tab)));
 
         document.getElementById("btn-fit").addEventListener("click", () => G.mapview.fit());
+        document.getElementById("btn-add-station").addEventListener("click", () => {
+            const p = G.mapview.freeSpot();
+            app.addStation(p.x, p.y);
+        });
+        document.getElementById("btn-undo").addEventListener("click", undo);
+        document.getElementById("btn-redo").addEventListener("click", redo);
+        document.getElementById("btn-pick-done").addEventListener("click", () => app.setPickLine(null));
+
+        // shortcuts; inside form fields the browser's own text undo etc. win
+        document.addEventListener("keydown", (ev) => {
+            if (ev.target.closest?.("input, textarea, select")) return;
+            const key = ev.key.toLowerCase();
+            if ((ev.ctrlKey || ev.metaKey) && (key === "z" || key === "y")) {
+                ev.preventDefault();
+                if (key === "z" && !ev.shiftKey) undo(); else redo();
+            } else if (key === "escape") {
+                if (menu.open) { closeMenu(); menu.querySelector("summary").focus(); return; }
+                app.state.selection = null;
+                app.setPickLine(null);
+            } else if ((key === "delete" || key === "backspace") && app.state.selection !== null && app.canEdit()) {
+                const model = app.editableModel();
+                const station = model.stations.find(s => s.id === app.state.selection);
+                if (station) { ev.preventDefault(); app.deleteStation(model, station); }
+            }
+        });
 
         // restore autosaved work, otherwise start with the default example
         let tc = null;

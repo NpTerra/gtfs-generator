@@ -20,7 +20,7 @@
     const DAY_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
     // remembers which <details> sections are open across re-renders
-    const openSections = new Set(["test", "stations", "lines", "expected", "problems"]);
+    const openSections = new Set(["test", "stations", "lines", "expected"]);
 
     function h(tag, props, ...children) {
         const node = document.createElement(tag);
@@ -33,12 +33,26 @@
                 else if (["checked", "value", "disabled", "selected", "hidden"].includes(k)) node[k] = v;
                 else node.setAttribute(k, v);
             }
+            // icon-only buttons: their title is the accessible name
+            if (tag === "button" && props.title && /\bicon\b/.test(props.class ?? ""))
+                node.setAttribute("aria-label", props.title);
         }
         for (const c of children.flat(Infinity)) {
             if (c === null || c === undefined || c === false) continue;
             node.append(c instanceof Node ? c : document.createTextNode(c));
         }
         return node;
+    }
+
+    // <svg class="i"><use href="#i-NAME"/></svg>, see the sprite in index.html
+    function icon(name) {
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("class", "i");
+        svg.setAttribute("aria-hidden", "true");
+        const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+        use.setAttribute("href", "#i-" + name);
+        svg.append(use);
+        return svg;
     }
 
     function section(id, title, count, ...body) {
@@ -79,10 +93,7 @@
                 value: tc.description, rows: 3,
                 oninput: (e) => { tc.description = e.target.value; app.touch(); }
             }), t("hint.description")),
-            field("Act (act.txt)", h("textarea", {
-                class: "mono", value: tc.act, rows: 3,
-                oninput: (e) => { tc.act = e.target.value; app.touch(); }
-            }), t("hint.act")),
+            field("Act (act.txt)", actEditor(app), t("hint.act")),
             h("label", { class: "row", style: "cursor:pointer" },
                 h("input", {
                     type: "checkbox", checked: tc.randomizeOffsets, style: "width:auto",
@@ -92,6 +103,66 @@
             ),
             h("div", { class: "hint" }, t("hint.randomize"))
         );
+    }
+
+    // Form fields for the known act methods, kept in sync with the raw act.txt
+    // textarea, which stays the source of truth (custom methods, odd inputs).
+    function actEditor(app) {
+        const tc = app.state.tc;
+        const A = G.actVisuals;
+        const form = h("div", { class: "act-form" });
+
+        const setAct = (text) => { tc.act = text; raw.value = text; app.touch(); };
+        const raw = h("textarea", {
+            class: "mono", value: tc.act, rows: 2, title: "Raw act.txt",
+            oninput: (e) => { tc.act = e.target.value; app.touch(); fill(); }
+        });
+
+        const unique = (values) => [...new Set(values.filter(Boolean))];
+        const suggestions = {
+            station: unique(tc.arrange.stations.map(s => s.name)),
+            line: unique(tc.arrange.lines.flatMap(l => [l.shortName, l.name]))
+        };
+
+        function fill() {
+            const act = A.split(tc.act);
+            const known = Object.keys(A.METHODS);
+            const current = act.method.toUpperCase();
+
+            const select = h("select", {
+                class: "mono", title: "Method (first line of act.txt)",
+                // parameters mean something else per method, so start empty
+                onchange: (e) => { setAct(A.join({ method: e.target.value, params: [], rest: [] })); fill(); }
+            },
+                known.includes(current) ? null
+                    : h("option", { value: act.method, selected: true }, act.method ? act.method + " (custom)" : "choose a method…"),
+                known.map(m => h("option", { value: m, selected: m === current }, m)));
+
+            const inputs = A.fields(act).map(({ param, values }, i) => h("label", {
+                class: "act-param" + (param.repeat ? " wide" : "")
+            },
+                h("span", null, param.label),
+                h("input", {
+                    type: "text", class: "mono", value: values.join(";"),
+                    list: param.kind === "station" || param.kind === "line" ? "act-" + param.kind + "s" : undefined,
+                    inputmode: param.kind === "number" ? "decimal" : undefined,
+                    placeholder: param.repeat ? "A;B;C" : undefined,
+                    oninput: (e) => {
+                        const now = A.split(tc.act);
+                        const params = Array.from({ length: i }, (_, k) => now.params[k] ?? "");
+                        params.push(...(param.repeat ? e.target.value.split(";") : [e.target.value]),
+                            ...(param.repeat ? [] : now.params.slice(i + 1)));
+                        setAct(A.join({ ...now, params: params.map(s => s.trim()) }));
+                    }
+                })));
+
+            form.replaceChildren(select, ...(inputs.length > 0 ? [h("div", { class: "act-params" }, inputs)] : []));
+        }
+        fill();
+
+        return h("div", { class: "act-editor" }, form, raw,
+            h("datalist", { id: "act-stations" }, suggestions.station.map(v => h("option", { value: v }))),
+            h("datalist", { id: "act-lines" }, suggestions.line.map(v => h("option", { value: v }))));
     }
 
     function agencySection(app) {
@@ -118,28 +189,20 @@
             h("button", {
                 class: "small accent add-btn",
                 onclick: () => {
-                    const id = M.nextId(model.stations);
-                    const station = M.makeStation(id, autoName(model.stations.length), 0, 0);
-                    model.stations.push(station);
-                    app.state.selection = id;
-                    app.structure();
+                    const p = G.mapview.freeSpot();
+                    app.addStation(p.x, p.y);
                 }
-            }, "+ Add station")
+            }, icon("plus"), "Add station")
         );
-    }
-
-    function autoName(index) {
-        let name = "";
-        let n = index;
-        do { name = String.fromCharCode(65 + (n % 26)) + name; n = Math.floor(n / 26) - 1; } while (n >= 0);
-        return name;
     }
 
     function stationCard(app, model, s) {
         const isGPS = s.coordMode === "gps";
 
         const coordInput = (key) => h("input", {
-            type: "number", step: "any",
+            type: "number", step: "any", class: "grow",
+            title: isGPS ? (key === "a" ? "Latitude (degrees)" : "Longitude (degrees)")
+                : (key === "a" ? "x (meters)" : "y (meters)"),
             value: isGPS ? M.round6(key === "a" ? s.lat : s.lon) : M.round6(key === "a" ? s.x : s.y),
             dataset: { coord: key, stationId: s.id },
             oninput: (e) => {
@@ -191,12 +254,12 @@
                         e.stopPropagation();
                         app.deleteStation(model, s);
                     }
-                }, "✕")
+                }, icon("x"))
             ),
             h("div", { class: "row" },
                 h("div", { class: "mode-toggle" }, modeBtn("xy", "XY"), modeBtn("gps", "GPS")),
-                field(isGPS ? "lat (°)" : "x (m)", coordInput("a")),
-                field(isGPS ? "lon (°)" : "y (m)", coordInput("b"))
+                h("span", { class: "coord-label" }, isGPS ? "lat" : "x"), coordInput("a"),
+                h("span", { class: "coord-label" }, isGPS ? "lon" : "y"), coordInput("b")
             )
         );
     }
@@ -216,7 +279,7 @@
                     });
                     app.structure();
                 }
-            }, "+ Add line")
+            }, icon("plus"), "Add line")
         );
     }
 
@@ -245,22 +308,24 @@
                         [l.stops[i - 1], l.stops[i]] = [l.stops[i], l.stops[i - 1]];
                         app.structure();
                     }
-                }, "↑"),
+                }, icon("arrow-up")),
                 h("button", {
                     class: "icon", title: "Move down", disabled: i === l.stops.length - 1,
                     onclick: () => {
                         [l.stops[i + 1], l.stops[i]] = [l.stops[i], l.stops[i + 1]];
                         app.structure();
                     }
-                }, "↓"),
+                }, icon("arrow-down")),
                 h("button", {
                     class: "icon danger", title: "Remove stop",
                     onclick: () => { l.stops.splice(i, 1); app.structure(); }
-                }, "✕")
+                }, icon("x"))
             )
         );
 
-        return h("div", { class: "card" },
+        const picking = app.state.pickLine === l;
+
+        return h("div", { class: "card" + (picking ? " selected" : "") },
             h("div", { class: "row" },
                 h("input", {
                     type: "color", class: "color-swatch", value: toColorValue(l.color),
@@ -280,7 +345,7 @@
                 h("button", {
                     class: "icon danger", title: "Delete line",
                     onclick: () => app.deleteLine(model, l)
-                }, "✕")
+                }, icon("x"))
             ),
             h("div", { class: "row" },
                 h("span", { class: "badge", title: "route_id in the generated files" }, "R" + l.id),
@@ -303,21 +368,24 @@
                     h("span", null, "Stops (in order)"), h("span", null, "arrival"), h("span", null, "departure"), h("span"))
                 : h("div", { class: "hint" }, t("hint.noStops")),
             h("div", { class: "stops-list" }, l.stops.map((s, i) => stopRow(s, i))),
-            h("button", {
-                class: "small add-btn",
-                disabled: model.stations.length === 0,
-                onclick: () => {
-                    const last = l.stops[l.stops.length - 1];
-                    const usedIds = new Set(l.stops.map(st => st.stationId));
-                    const next = model.stations.find(s => !usedIds.has(s.id)) ?? model.stations[0];
-                    l.stops.push({
-                        stationId: next.id,
-                        arrival: last ? last.arrival : "08:00:00",
-                        departure: last ? last.departure : "08:00:00"
-                    });
-                    app.structure();
-                }
-            }, "+ Add stop")
+            h("div", { class: "row" },
+                h("button", {
+                    class: "small",
+                    disabled: model.stations.length === 0,
+                    onclick: () => {
+                        const usedIds = new Set(l.stops.map(st => st.stationId));
+                        const next = model.stations.find(s => !usedIds.has(s.id)) ?? model.stations[0];
+                        M.appendStop(l, next.id);
+                        app.structure();
+                    }
+                }, icon("plus"), "Add stop"),
+                h("button", {
+                    class: "small" + (picking ? " accent" : ""),
+                    disabled: model.stations.length === 0,
+                    title: "Click stations on the map to append them as stops (Esc to finish)",
+                    onclick: () => app.setPickLine(picking ? null : l)
+                }, picking ? [icon("check"), "Done picking"] : [icon("pin"), "Pick stops on map"])
+            )
         );
     }
 
@@ -343,7 +411,7 @@
                     });
                     app.structure();
                 }
-            }, "+ Add calendar")
+            }, icon("plus"), "Add calendar")
         );
     }
 
@@ -370,7 +438,7 @@
                 h("button", {
                     class: "icon danger", title: "Delete calendar",
                     onclick: () => { model.calendars.splice(model.calendars.indexOf(c), 1); app.structure(); }
-                }, "✕")
+                }, icon("x"))
             ),
             h("div", { class: "days" }, DAY_LABELS.map((label, i) =>
                 h("label", null,
@@ -418,7 +486,7 @@
                         h("button", {
                             class: "icon danger", title: "Delete trip",
                             onclick: () => { model.trips.splice(model.trips.indexOf(t), 1); app.structure(); }
-                        }, "✕")
+                        }, icon("x"))
                     )
                 ))),
             h("button", {
@@ -432,7 +500,7 @@
                     });
                     app.structure();
                 }
-            }, "+ Add trip")
+            }, icon("plus"), "Add trip")
         );
     }
 
@@ -463,7 +531,7 @@
                         oninput: (e) => { exp.exception = e.target.value; app.touch(); }
                     }),
                     t("hint.exception"))
-                : h("div", { class: "row" },
+                : h("div", { class: "row wrap" },
                     h("button", {
                         class: "small", title: "Overwrite the Expected model with a copy of the Arrange model",
                         onclick: () => {
@@ -473,43 +541,41 @@
                                 app.structure();
                             }
                         }
-                    }, "⧉ Copy Arrange → Expected"),
+                    }, icon("copy"), "Copy Arrange → Expected"),
                     h("button", {
                         class: "small accent",
                         onclick: () => app.setTab("expected")
-                    }, "Edit expected model ➜")
+                    }, "Edit expected model", icon("arrow-right"))
                 ),
             h("datalist", { id: "known-exceptions" },
                 M.KNOWN_EXCEPTIONS.map(x => h("option", { value: x })))
         );
     }
 
-    function problemsSection() {
-        // content filled by app.renderValidation()
-        return section("problems", "Problems", null, h("div", { id: "problems-body" }));
-    }
-
     // ---- top-level render ----------------------------------------------------
 
-    function render(app) {
-        const sidebar = document.getElementById("sidebar");
-        const scrollTop = sidebar.scrollTop;
-        const tc = app.state.tc;
-        const showModelSections = !(app.state.tab === "expected" && tc.expected.type === "exception");
-
-        const parts = [testSection(app), agencySection(app)];
-
-        if (app.state.tab === "expected")
-            parts.push(h("div", { class: "editing-pill" }, t("pill.expected")));
-
-        if (showModelSections)
-            parts.push(stationsSection(app), linesSection(app), calendarsSection(app), tripsSection(app));
-
-        parts.push(expectedSection(app), problemsSection());
-
-        sidebar.replaceChildren(...parts);
-        sidebar.scrollTop = scrollTop;
+    // re-renders a panel body, keeping its scroll position
+    function fill(body, parts) {
+        const scrollTop = body.scrollTop;
+        body.replaceChildren(...parts.filter(Boolean));
+        body.scrollTop = scrollTop;
     }
 
-    G.sidebar = { render };
+    function render(app) {
+        const tc = app.state.tc;
+        const isExpected = app.state.tab === "expected";
+
+        fill(document.getElementById("test-body"),
+            [testSection(app), expectedSection(app), agencySection(app)]);
+
+        document.getElementById("panel-model").classList.toggle("expected", isExpected);
+        document.getElementById("model-title").textContent =
+            isExpected ? "Expected model (after the act)" : "Arrange model";
+        fill(document.getElementById("model-body"), app.canEdit()
+            ? [isExpected ? h("div", { class: "editing-pill" }, t("pill.expected")) : null,
+                stationsSection(app), linesSection(app), calendarsSection(app), tripsSection(app)]
+            : [h("div", { class: "panel-empty" }, t("map.exceptionMsg", { name: tc.expected.exception }))]);
+    }
+
+    G.sidebar = { render, icon };
 })();

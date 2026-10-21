@@ -61,6 +61,26 @@
         return list.reduce((max, item) => Math.max(max, item.id), 0) + 1;
     }
 
+    // first unused name of A, B, ..., Z, AA, AB, ...
+    function nextStationName(stations) {
+        const used = new Set(stations.map(s => s.name));
+        for (let i = 0; ; i++) {
+            let name = "", n = i;
+            do { name = String.fromCharCode(65 + (n % 26)) + name; n = Math.floor(n / 26) - 1; } while (n >= 0);
+            if (!used.has(name)) return name;
+        }
+    }
+
+    // appends a stop, copying the previous stop's times
+    function appendStop(line, stationId) {
+        const last = line.stops[line.stops.length - 1];
+        line.stops.push({
+            stationId,
+            arrival: last ? last.arrival : "08:00:00",
+            departure: last ? last.departure : "08:00:00"
+        });
+    }
+
     function defaultTestCase() {
         const tc = {
             version: 1,
@@ -258,13 +278,20 @@
 
     function validateModel(model, label, problems) {
         const stationIds = new Set();
+        const nameCounts = new Map();
         for (const s of model.stations) {
             if (stationIds.has(s.id))
                 problems.push({ level: "error", text: t("v.dupStation", { label, id: s.id }) });
             stationIds.add(s.id);
             if (!s.name)
                 problems.push({ level: "warning", text: t("v.stationNoName", { label, id: s.id }) });
+            else
+                nameCounts.set(s.name, (nameCounts.get(s.name) ?? 0) + 1);
         }
+        // only a warning: AMBIGUOUS_STATION_NAMES tests need duplicates on purpose
+        for (const [name, n] of nameCounts)
+            if (n > 1)
+                problems.push({ level: "warning", text: t("v.dupStationName", { label, name, n }) });
 
         const lineIds = new Set();
         for (const l of model.lines) {
@@ -290,6 +317,8 @@
             calendarIds.add(c.id);
             if (!isValidDate(c.start) || !isValidDate(c.end))
                 problems.push({ level: "error", text: t("v.badDates", { label, id: c.id }) });
+            else if (c.start > c.end)
+                problems.push({ level: "warning", text: t("v.calendarOrder", { label, id: c.id }) });
         }
 
         const tripIds = new Set();
@@ -318,6 +347,8 @@
             problems.push({ level: "warning", text: t("v.noDescription") });
         if (!tc.act?.trim())
             problems.push({ level: "error", text: t("v.noAct") });
+        for (const p of G.actVisuals?.check(tc.act, tc.arrange) ?? [])
+            problems.push({ level: "warning", text: t(p.key, p.params) });
         if (isPhoneMissing(tc.agency))
             problems.push({ level: "warning", text: t("v.phone") });
 
@@ -349,7 +380,7 @@
         KNOWN_EXCEPTIONS,
         round6,
         makeStation, setStationXY, setStationGPS, syncFromXY, syncFromGPS,
-        emptyModel, nextId, defaultTestCase, cloneModel,
+        emptyModel, nextId, nextStationName, appendStop, defaultTestCase, cloneModel,
         normalizeTime, isValidDate, isPhoneMissing,
         toJSON, fromJSON,
         validate

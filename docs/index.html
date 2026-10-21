@@ -5,56 +5,121 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GTFS Test Editor</title>
     <link rel="stylesheet" href="css/style.css">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚇</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><rect x='5' y='3' width='14' height='14' rx='3'/><path d='M5 10h14M9 21l1.5-4M15 21l-1.5-4'/></svg>">
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <!-- icon sprite: 24x24 stroke icons, used as <svg class="i"><use href="#i-NAME"/></svg> -->
+    <symbol id="i-tram" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 10h14M9 21l1.5-4M15 21l-1.5-4M9 13.5h.01M15 13.5h.01"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+    <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 5v14M19 12l-7 7-7-7"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12z"/><circle cx="12" cy="9" r="2.5"/></symbol>
+    <symbol id="i-fit" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 21V9M7 14l5-5 5 5M5 3h14"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8"/></symbol>
+    <symbol id="i-panel-left" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></symbol>
+    <symbol id="i-panel-right" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></symbol>
+    <symbol id="i-panel-bottom" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 15h18"/></symbol>
+    <symbol id="i-error" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></symbol>
+    <symbol id="i-warning" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></symbol>
+</svg>
 <header id="topbar">
-    <div class="brand">🚇 GTFS Test Editor</div>
+    <div class="brand"><svg class="i"><use href="#i-tram"/></svg> <span>GTFS Test Editor</span></div>
     <div class="topbar-actions">
-        <button id="btn-new" title="Start a fresh test case">New</button>
-        <select id="sel-example" title="Load a built-in example test case as a starting point">
-            <option value="">Load example…</option>
-        </select>
-        <button id="btn-import" title="Import a test case (.json) or a GTFS/submission zip">Import</button>
-        <button id="btn-export" title="Save the whole test case as a single .json file">Export JSON</button>
-        <button id="btn-generate" class="primary" title="Download the submission files (act.txt, comment.txt, arrange.zip, assert.*)">⬇ Generate</button>
+        <details id="file-menu" class="menu">
+            <summary>File <svg class="i"><use href="#i-chevron-down"/></svg></summary>
+            <div class="menu-list">
+                <button id="btn-new" title="Start a fresh test case"><svg class="i"><use href="#i-plus"/></svg> New test case</button>
+                <button id="btn-import" title="Import a test case (.json) or a GTFS/submission zip"><svg class="i"><use href="#i-upload"/></svg> Import…</button>
+                <button id="btn-export" title="Save the whole test case as a single .json file"><svg class="i"><use href="#i-save"/></svg> Export JSON</button>
+                <div class="menu-label">Load example</div>
+                <div id="menu-examples"></div>
+            </div>
+        </details>
+        <button id="btn-generate" class="primary" title="Download the submission files (act.txt, comment.txt, arrange.zip, assert.*)"><svg class="i"><use href="#i-download"/></svg> Generate</button>
         <div id="lang-toggle" title="Language of hints and messages">
             <button data-lang="en" class="active">EN</button>
             <button data-lang="hu">HU</button>
         </div>
-        <span id="status-chip" class="chip ok" title="Validation status">✓</span>
+        <button id="status-chip" class="chip ok" title="Validation status: click to see the problems">✓</button>
     </div>
     <input type="file" id="file-input" accept=".json,.zip" hidden>
 </header>
 
+<!-- IDE-style layout: panels around the map, resized by dragging the
+     splitters, hidden/shown with the toolbar toggles (see js/layout.js) -->
 <div id="layout">
-    <aside id="sidebar"></aside>
+    <aside id="panel-test" class="panel" aria-label="Test case">
+        <div class="panel-head">
+            <span>Test case</span>
+            <button class="icon-btn" data-hide="test" title="Hide panel" aria-label="Hide the Test case panel"><svg class="i"><use href="#i-x"/></svg></button>
+        </div>
+        <div class="panel-body" id="test-body"></div>
+    </aside>
+    <div class="splitter" data-split="test" role="separator" aria-orientation="vertical" aria-label="Resize the Test case panel" tabindex="0" title="Drag to resize · double-click to reset"></div>
 
     <main id="map-area">
         <div id="map-toolbar">
-            <div class="tabs" id="model-tabs">
-                <button class="tab active" data-tab="arrange">Arrange</button>
-                <button class="tab" data-tab="expected">Expected</button>
+            <div class="toolbar-group">
+                <button class="icon-btn panel-toggle" data-toggle="test" title="Show/hide the Test case panel" aria-label="Test case panel"><svg class="i"><use href="#i-panel-left"/></svg></button>
+                <div class="tabs" id="model-tabs">
+                    <button class="tab active" data-tab="arrange">Arrange</button>
+                    <button class="tab" data-tab="expected">Expected</button>
+                </div>
             </div>
             <div class="map-tools">
                 <span id="cursor-pos" class="muted"></span>
-                <button id="btn-fit" title="Zoom to fit all stations">Fit view</button>
+                <button id="btn-add-station" title="Add a station in the middle of the map"><svg class="i"><use href="#i-plus"/></svg> <span class="label">Station</span></button>
+                <button id="btn-undo" class="icon-btn" title="Undo (Ctrl+Z)" aria-label="Undo" disabled><svg class="i"><use href="#i-undo"/></svg></button>
+                <button id="btn-redo" class="icon-btn" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled><svg class="i"><use href="#i-redo"/></svg></button>
+                <button id="btn-fit" title="Zoom to fit all stations"><svg class="i"><use href="#i-fit"/></svg> <span class="label">Fit view</span></button>
+                <button class="icon-btn panel-toggle" data-toggle="problems" title="Show/hide the Problems panel" aria-label="Problems panel"><svg class="i"><use href="#i-panel-bottom"/></svg></button>
+                <button class="icon-btn panel-toggle" data-toggle="model" title="Show/hide the Model panel" aria-label="Model panel"><svg class="i"><use href="#i-panel-right"/></svg></button>
             </div>
         </div>
         <div id="map-wrap">
             <svg id="map" xmlns="http://www.w3.org/2000/svg">
                 <g id="layer-grid"></g>
+                <g id="layer-ghost"></g>
                 <g id="layer-act"></g>
                 <g id="layer-lines"></g>
                 <g id="layer-stations"></g>
             </svg>
             <div id="map-message" hidden></div>
+            <div id="map-banner" hidden><span></span><button id="btn-pick-done">Done</button></div>
             <div id="map-hint" class="muted">Drag stations to move them · double-click to add a station · scroll to zoom</div>
         </div>
     </main>
+
+    <div class="splitter" data-split="model" role="separator" aria-orientation="vertical" aria-label="Resize the Model panel" tabindex="0" title="Drag to resize · double-click to reset"></div>
+    <aside id="panel-model" class="panel" aria-label="Model">
+        <div class="panel-head">
+            <span id="model-title">Arrange model</span>
+            <button class="icon-btn" data-hide="model" title="Hide panel" aria-label="Hide the Model panel"><svg class="i"><use href="#i-x"/></svg></button>
+        </div>
+        <div class="panel-body" id="model-body"></div>
+    </aside>
+
+    <div class="splitter" data-split="problems" role="separator" aria-orientation="horizontal" aria-label="Resize the Problems panel" tabindex="0" title="Drag to resize · double-click to reset"></div>
+    <section id="panel-problems" class="panel" aria-label="Problems">
+        <div class="panel-head">
+            <span>Problems <span id="problems-count" class="count"></span></span>
+            <button class="icon-btn" data-hide="problems" title="Hide panel" aria-label="Hide the Problems panel"><svg class="i"><use href="#i-x"/></svg></button>
+        </div>
+        <div class="panel-body" id="problems-body"></div>
+    </section>
 </div>
 
-<div id="toasts"></div>
+<div id="toasts" role="status" aria-live="polite"></div>
 
 <script src="js/i18n.js"></script>
 <script src="js/geo.js"></script>
@@ -65,6 +130,7 @@
 <script src="js/act-visuals.js"></script>
 <script src="js/map.js"></script>
 <script src="js/sidebar.js"></script>
+<script src="js/layout.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

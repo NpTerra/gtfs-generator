@@ -15,10 +15,10 @@ const path = require("path");
 const REPO = path.join(__dirname, "..");
 const DOCS = path.join(REPO, "docs");
 
-for (const f of ["i18n.js", "geo.js", "csv.js", "zip.js", "model.js", "gtfs.js"])
+for (const f of ["i18n.js", "geo.js", "csv.js", "zip.js", "model.js", "gtfs.js", "act-visuals.js"])
     eval(fs.readFileSync(path.join(DOCS, "js", f), "utf8"));
 
-const { csv, zip, model: M, gtfs } = globalThis.GTG;
+const { csv, zip, model: M, gtfs, actVisuals: A } = globalThis.GTG;
 const decoder = new TextDecoder();
 let failures = 0;
 
@@ -208,7 +208,58 @@ async function checkOffsets(examples) {
     else console.log(`ok   offsets (lat ${off.lat}, lon ${off.lon})`);
 }
 
+// ---- model helpers used by the editor ----------------------------------------
+
+function checkModelHelpers() {
+    const problems = [];
+    const expect = (cond, msg) => { if (!cond) problems.push(msg); };
+    const named = (...names) => names.map((name, i) => M.makeStation(i + 1, name, 0, 0));
+
+    expect(M.nextStationName([]) === "A", "first auto name is A");
+    expect(M.nextStationName(named("A", "C")) === "B", "auto name fills the gap");
+    expect(M.nextStationName(named(..."ABCDEFGHIJKLMNOPQRSTUVWXYZ")) === "AA", "auto name after Z is AA");
+
+    const line = { stops: [] };
+    M.appendStop(line, 1);
+    line.stops[0].arrival = line.stops[0].departure = "09:15:00";
+    M.appendStop(line, 2);
+    expect(line.stops[1].stationId === 2 && line.stops[1].arrival === "09:15:00", "appendStop copies the previous times");
+
+    const tc = M.defaultTestCase();
+    tc.arrange.stations[1].name = "A";
+    tc.arrange.calendars[0].end = "2024-01-01";
+    const warnings = M.validate(tc).filter(p => p.level === "warning").map(p => p.text);
+    expect(warnings.some(w => w.includes("v.dupStationName") || w.includes('named "A"')), "duplicate station names warn");
+    expect(warnings.some(w => w.includes("v.calendarOrder") || w.includes("ends before")), "reversed calendar warns");
+
+    const files = {
+        "calendar.txt": new TextEncoder().encode("service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nC1,1,1,1,1,1,1,1,20250101,20251231\n"),
+        "trips.txt": new TextEncoder().encode("route_id,service_id,trip_id\nR1,weekday,T1\n")
+    };
+    expect(gtfs.importGTFS(files).model.trips[0].service === 1, "unparsable service_id falls back to 1");
+
+    // act.txt split/join keeps positions, so the Act form can edit one field
+    const act = A.split("DIVERT_LINE\nZ2;Walk;Tower;Campus");
+    expect(A.fields(act)[1].values.join(";") === "Walk;Tower;Campus", "repeat param takes the rest");
+    expect(A.join({ ...act, params: ["", "10"] }) === "DIVERT_LINE\n;10", "empty field keeps its place");
+    expect(A.join({ method: "CLOSE_AREA", params: ["A", ""], rest: [] }) === "CLOSE_AREA\nA", "trailing empties dropped");
+    expect(A.join(A.split("CLOSE_AREA\nA;10\nL1;L2")) === "CLOSE_AREA\nA;10\nL1;L2", "extra lines survive");
+    const actKeys = (act) => A.check(act, M.defaultTestCase().arrange).map(p => p.key).join(",");
+    expect(actKeys("CLOSE_AREA\nA;10") === "", "valid act has no warnings");
+    expect(actKeys("CLOSE_AREA\nX;ten") === "v.actNoStation,v.actNotNumber", "bad station + radius warn");
+    expect(actKeys("DIVERT_LINE\nl1;A;Nope") === "v.actNoStation", "line names match case-insensitively");
+
+    if (problems.length > 0) {
+        failures++;
+        console.log("FAIL model helpers");
+        for (const p of problems) console.log("  - " + p);
+    } else {
+        console.log("ok   model helpers");
+    }
+}
+
 async function run() {
+    checkModelHelpers();
     const examples = checkExamples();
     await roundTripSubmittedTests();
     await checkOffsets(examples);

@@ -127,6 +127,32 @@
         });
     }
 
+    // the Arrange model, faded, under the Expected one so the changes stand out
+    function renderGhost(model) {
+        const g = layers.ghost;
+        g.replaceChildren();
+        if (!model) return;
+        const stationById = new Map(model.stations.map(s => [s.id, s]));
+        for (const line of model.lines) {
+            const pts = line.stops
+                .map(st => stationById.get(st.stationId))
+                .filter(Boolean)
+                .map(s => worldToScreen(s.x, s.y));
+            if (pts.length < 2) continue;
+            g.append(el("polyline", {
+                points: pts.map(p => `${p.x},${p.y}`).join(" "),
+                class: "ghost-line", stroke: line.color || "#555"
+            }));
+        }
+        for (const s of model.stations) {
+            const p = worldToScreen(s.x, s.y);
+            g.append(el("circle", { cx: p.x, cy: p.y, r: 5, class: "ghost-station" }));
+            const label = el("text", { x: p.x + 8, y: p.y + 14, class: "ghost-label" });
+            label.textContent = s.name;
+            g.append(label);
+        }
+    }
+
     function renderActOverlay(actInfo) {
         const g = layers.act;
         g.replaceChildren();
@@ -140,6 +166,13 @@
         const g = layers.stations;
         g.replaceChildren();
         const selection = cb.getSelection();
+
+        // invisible, finger-sized hit areas, all below the dots so a dot always
+        // wins over a neighbour's hit area; the visible dots stay small
+        for (const s of model.stations) {
+            const p = worldToScreen(s.x, s.y);
+            g.append(el("circle", { cx: p.x, cy: p.y, r: 16, class: "station-hit", "data-station-id": s.id }));
+        }
 
         for (const s of model.stations) {
             const p = worldToScreen(s.x, s.y);
@@ -177,11 +210,13 @@
 
         renderGrid();
         if (!model || message) {
+            layers.ghost.replaceChildren();
             layers.act.replaceChildren();
             layers.lines.replaceChildren();
             layers.stations.replaceChildren();
             return;
         }
+        renderGhost(cb.getGhostModel());
         const actInfo = G.actVisuals.compute(model, cb.getTestCase().act);
         renderActOverlay(actInfo);
         renderLines(model, actInfo);
@@ -394,6 +429,18 @@
         if (!anyVisible) fit();
     }
 
+    // a grid point near the view center that isn't on top of a station
+    function freeSpot() {
+        const stations = cb.getModel()?.stations ?? [];
+        const step = gridStep();
+        const round = (v) => G.model.round6(Math.round(v / step) * step);
+        let x = round(view.cx);
+        const y = round(view.cy);
+        while (stations.some(s => Math.hypot(s.x - x, s.y - y) < step / 2))
+            x = G.model.round6(x + step);
+        return { x, y };
+    }
+
     function init(callbacks) {
         cb = callbacks;
         svg = document.getElementById("map");
@@ -401,6 +448,7 @@
         msgEl = document.getElementById("map-message");
         layers = {
             grid: document.getElementById("layer-grid"),
+            ghost: document.getElementById("layer-ghost"),
             act: document.getElementById("layer-act"),
             lines: document.getElementById("layer-lines"),
             stations: document.getElementById("layer-stations")
@@ -408,5 +456,5 @@
         initEvents();
     }
 
-    G.mapview = { init, render, fit, ensureVisible };
+    G.mapview = { init, render, fit, ensureVisible, freeSpot };
 })();
