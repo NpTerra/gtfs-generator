@@ -257,10 +257,10 @@
             const id = numericId(row.trip_id, usedTripIds);
             tripIds.set(row.trip_id, id);
             // barebones generators sometimes wrote "1" instead of "C1"; match leniently
+            const parsed = parseInt(String(row.service_id).replace(/^\D*/, ""), 10);
             const service = calendarIds.get(row.service_id)
                 ?? calendarIds.get("C" + row.service_id)
-                ?? parseInt(String(row.service_id).replace(/^\D*/, ""), 10)
-                ?? 1;
+                ?? (Number.isNaN(parsed) ? 1 : parsed);
             model.trips.push({
                 id,
                 line: lineIds.get(row.route_id) ?? 0,
