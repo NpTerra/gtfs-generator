@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The center of the layout: toolbar (tabs, map tools, panel toggles) + map.
+// The center of the layout: toolbar (tabs, map tools) + map.
 import {
   MaximizeIcon, PlusIcon, Redo2Icon, Undo2Icon,
 } from '@lucide/vue'

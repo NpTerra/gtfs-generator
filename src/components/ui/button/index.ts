@@ -9,7 +9,7 @@ export const buttonVariants = cva(
     variants: {
       variant: {
         default: 'bg-primary text-primary-foreground hover:bg-primary/85',
-        // the one main action (Generate): signal yellow with ink text
+        // an active, toggled-on action (Done picking): IntelliJ blue with white text
         signal: 'bg-signal text-signal-foreground font-semibold hover:bg-signal/85',
         outline: 'border-border bg-field hover:bg-muted hover:text-foreground dark:border-input aria-expanded:bg-muted aria-expanded:text-foreground',
         secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary aria-expanded:text-secondary-foreground',

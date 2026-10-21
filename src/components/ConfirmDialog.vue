@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { answerConfirm, confirmState } from '@/composables/useConfirm'
 
-// Cancel, Esc and clicking outside all close the dialog, which counts as "no".
+// Cancel and Esc close the dialog, which counts as "no".
 // Continue is a plain button: AlertDialogAction would close (= "no") before
 // its own click handler could answer "yes".
 function onOpenChange(open: boolean) {
