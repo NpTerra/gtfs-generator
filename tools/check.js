@@ -1,6 +1,6 @@
 // Test suite for the web editor (run with: node tools/check.js):
 //
-// 1) Validates every "Load example" entry in docs/examples/*.json: it must
+// 1) Validates every "Load example" entry in web/examples/*.json: it must
 //    parse, pass validation without errors, generate cleanly, and survive a
 //    JSON round trip. If an optional examples/index.json manifest exists, it
 //    must list exactly the example files that are present.
@@ -13,10 +13,10 @@ const fs = require("fs");
 const path = require("path");
 
 const REPO = path.join(__dirname, "..");
-const DOCS = path.join(REPO, "docs");
+const WEB = path.join(REPO, "web");
 
 for (const f of ["i18n.js", "geo.js", "csv.js", "zip.js", "model.js", "gtfs.js", "act-visuals.js"])
-    eval(fs.readFileSync(path.join(DOCS, "js", f), "utf8"));
+    eval(fs.readFileSync(path.join(WEB, "js", f), "utf8"));
 
 const { csv, zip, model: M, gtfs, actVisuals: A } = globalThis.GTG;
 const decoder = new TextDecoder();
@@ -48,12 +48,12 @@ function compareTables(label, name, origRows, genRows, problems) {
 // ---- 1) validate the self-registering example files -----------------------
 
 function checkExamples() {
-    const dir = path.join(DOCS, "examples");
+    const dir = path.join(WEB, "examples");
     const files = fs.existsSync(dir)
         ? fs.readdirSync(dir).filter(f => f.endsWith(".json") && f !== "index.json").sort()
         : [];
     if (files.length === 0) {
-        console.log("FAIL: no docs/examples/*.json found");
+        console.log("FAIL: no web/examples/*.json found");
         failures++;
         return [];
     }

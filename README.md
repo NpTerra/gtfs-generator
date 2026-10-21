@@ -4,14 +4,14 @@ A visual tool for creating GTFS test cases (arrange / act / assert) for the Szof
 
 ## 🌐 Web editor (nothing to install)
 
-Open the editor in your browser: use the hosted instance your instructor/maintainer provides, or serve the `docs/` directory with any web server (see Hosting below). For a quick local run:
+Open the editor in your browser: use the hosted instance your instructor/maintainer provides, or serve the `web/` directory with any web server (see Hosting below). For a quick local run:
 
 ```
-python -m http.server 8000
-# then open http://localhost:8000/docs/
+python -m http.server 8000 -d web
+# then open http://localhost:8000/
 ```
 
-Opening `docs/index.html` directly from disk (`file://`) also works; the only thing missing there is the example list, which needs a server to enumerate the example files.
+Opening `web/index.html` directly from disk (`file://`) also works; the only thing missing there is the example list, which needs a server to enumerate the example files.
 
 Everything runs locally in your browser; nothing is uploaded anywhere.
 
@@ -55,12 +55,12 @@ Any current Chrome, Edge or Firefox, and Safari 16.4+. (Importing zips made by o
 
 ### Hosting
 
-**Recommended: the included `Dockerfile`** (built for Coolify, works anywhere Docker does). It serves `docs/` with nginx and already enables the directory listing that example auto-detection needs; `submitted-tests/` is never copied into the image. In Coolify: add the repo as an application, choose *Dockerfile* as the build pack, set the port to 80. Adding an example is then: commit a `.json` into `docs/examples/`, redeploy, refresh.
+**Recommended: the included `Dockerfile`** (built for Coolify, works anywhere Docker does). It serves `web/` with nginx and already enables the directory listing that example auto-detection needs; `submitted-tests/` is never copied into the image. In Coolify: add the repo as an application, choose *Dockerfile* as the build pack, set the port to 80. Adding an example is then: commit a `.json` into `web/examples/`, redeploy, refresh.
 
-If you serve `docs/` some other way instead, two things to know:
+If you serve `web/` some other way instead, two things to know:
 
-- **Set the web root to `docs/`, not the repo root.** Otherwise everything else in the repo becomes downloadable too (including `submitted-tests/` if you keep real submissions there).
-- **Examples are auto-detected.** The editor discovers `examples/*.json` at startup, so dropping a new file into `docs/examples/` shows up on the next refresh, if the server can list that directory. With nginx that means (see `deploy/nginx.conf`):
+- **Set the web root to `web/`, not the repo root.** Otherwise everything else in the repo becomes downloadable too (including `submitted-tests/` if you keep real submissions there).
+- **Examples are auto-detected.** The editor discovers `examples/*.json` at startup, so dropping a new file into `web/examples/` shows up on the next refresh, if the server can list that directory. With nginx that means (see `deploy/nginx.conf`):
 
   ```nginx
   location /examples/ {
@@ -69,15 +69,16 @@ If you serve `docs/` some other way instead, two things to know:
   }
   ```
 
-  `python -m http.server` and Caddy's `file_server browse` list directories out of the box. If your server cannot list directories, add a `docs/examples/index.json` manifest instead, a plain JSON array of file names: `["example1_closeAreaOneEnd.json", "..."]`. The editor tries the listing first and falls back to the manifest.
+  `python -m http.server` and Caddy's `file_server browse` list directories out of the box. If your server cannot list directories, add a `web/examples/index.json` manifest instead, a plain JSON array of file names: `["example1_closeAreaOneEnd.json", "..."]`. The editor tries the listing first and falls back to the manifest.
 
 
 ## Repo layout
 
-- `docs/`: the web editor (plain HTML/CSS/JS, no build step); serve this directory as the web root
-- `docs/examples/`: the *File → Load example* entries as plain test-case `.json` files (exactly what Export JSON produces). New files are picked up automatically on refresh; see Hosting.
-- `Dockerfile` + `deploy/nginx.conf`: container serving `docs/` with nginx, example auto-detection preconfigured (see Hosting)
+- `web/`: the web editor (plain HTML/CSS/JS, no build step); serve this directory as the web root
+- `web/examples/`: the *File → Load example* entries as plain test-case `.json` files (exactly what Export JSON produces). New files are picked up automatically on refresh; see Hosting.
+- `Dockerfile` + `deploy/nginx.conf`: container serving `web/` with nginx, example auto-detection preconfigured (see Hosting)
 - `tools/check.js`: the test suite. Validates every example and, if a local `submitted-tests/` folder exists, round-trips the generator against real submissions.
+- `docs/`: images for this README (not served)
 
 ## Extra resources
 
