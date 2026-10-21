@@ -1,6 +1,12 @@
 # real submissions: a local test corpus only, never commit
 submitted-tests/
 
+node_modules/
+dist/
+*.local
+*.log
+
 .DS_Store
 /.idea/
-/.vscode/
+/.vscode/*
+!/.vscode/extensions.json

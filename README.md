@@ -4,43 +4,35 @@ A visual tool for creating GTFS test cases (arrange / act / assert) for the Szof
 
 ## 🌐 Web editor (nothing to install)
 
-Open the editor in your browser: use the hosted instance your instructor/maintainer provides, or serve the `web/` directory with any web server (see Hosting below). For a quick local run:
+Open the editor in your browser at the hosted instance your instructor/maintainer provides. Everything runs locally in your browser; nothing is uploaded anywhere.
 
-```
-python3 -m http.server 8000 -d web
-# then open http://localhost:8000/
-```
-
-Opening `web/index.html` directly from disk (`file://`) also works; the only thing missing there is the example list, which needs a server to enumerate the example files.
-
-Everything runs locally in your browser; nothing is uploaded anywhere.
-
-![The editor with the DIVERT_LINE example: a map with two colored lines and the affected stations highlighted, between the Test case panel and the Arrange model panel, with Problems below](docs/screenshot.png)
+![The editor showing a real test case: a map with three colored lines and highlighted stations, between the Test case panel and the Arrange model panel](docs/screenshot.png)
 
 ### What it does
 
-- **IDE-style layout**: Test case panel on the left, the Arrange/Expected model on the right, Problems under the map. Drag the dividers to resize (double-click resets), hide panels with the toolbar toggles; your layout is remembered. On phones the map stays pinned on top and the panels scroll below it.
+- **IDE-style layout**, modeled on IntelliJ IDEA: the Test case panel on the left, the Arrange/Expected model on the right, Problems under the map. Drag the gaps to resize, hide a panel with its − button and bring it back from the stripe on the screen edge; your layout is remembered. Light, dark or system theme. On phones the map stays pinned on top and the panels scroll below it.
 - **Visual map** of your test network: lines are drawn in their colors, stations are draggable, double-click adds a station, scroll zooms.
 - **Act preview**: a `CLOSE_AREA` radius is drawn as a dashed circle on the map, and the stations/line of a `DIVERT_LINE` call are highlighted, so you can *see* what your test affects.
-- **Panel editors**: the Test case panel holds the name, description, act, expected result and agency; the model panel holds stations, lines (with ordered stops), calendars and trips.
+- **Sidebar editors** for stations, lines (with ordered stops), calendars, trips, the agency and the act/description texts.
 - **GPS ⇄ XY toggle per station**: place stations in meters on a grid (easy) or in real GPS coordinates; conversion matches the Java generator exactly.
 - **Arrange / Expected tabs**: edit the before-model and the after-model separately, or pick an expected **exception** instead. "Copy Arrange → Expected" saves you from re-entering everything.
-- **Undo / redo** (↶ ↷ in the map toolbar, or Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y while not typing in a text field) for every change, imports included. Select a station and press Delete or Backspace to remove it, Esc to deselect (Esc also ends *Pick stops on map*).
+- **Undo / redo** (↶ ↷ in the map toolbar, or Ctrl+Z / Ctrl+Shift+Z outside text fields) for every change, imports included. Select a station and press Delete to remove it, Esc to deselect.
 - **Pick stops on map**: on a line card, press *Pick stops on map* and click stations to append them as stops in order.
 - **Faded Arrange under Expected**: on the Expected tab the Arrange model is drawn faded underneath, so you see exactly what your act changes.
-- **Live validation**: duplicate IDs, missing references, bad times/dates etc. are listed in the Problems panel before you generate anything.
+- **Live validation**: duplicate IDs, missing references, bad times/dates etc. are listed in the Problems section before you generate anything.
 - **One-file import/export**: the whole test case is saved as a single `.json` you can share or keep in your repo.
 - **Generate**: downloads `<name>.zip` containing exactly what the grader wants:
   `comment.txt`, `act.txt`, `arrange.zip`, and `assert.zip` *or* `assert.txt`. Unzip it into your submission directory and you're done.
-- **Examples built in**: *File → Load example* contains synthetic test cases modeled on real, accepted submissions (same transformations, different layouts). Use them to learn the format, then build your own.
-- **Import old work**: besides `.json`, *File → Import…* also accepts a previously generated submission zip (`act.txt` + `arrange.zip` + …) or a bare GTFS zip, and reconstructs an editable test case from it.
+- **Random GPS offsets** (optional, on by default) shift all coordinates by a whole number of degrees on every generate, so identical station layouts still produce unique submissions. Relative distances are unaffected.
+- **Examples built in**: *Load example* in the test-name menu (top left) contains synthetic test cases modeled on real, accepted submissions (same transformations, different layouts). Use them to learn the format, then build your own.
+- **Import old work**: besides `.json`, *Import…* in the same menu also accepts a previously generated submission zip (`act.txt` + `arrange.zip` + …) or a bare GTFS zip, and reconstructs an editable test case from it.
 - Your work is **autosaved** in the browser (localStorage), so an accidental refresh loses nothing.
 
 ### Quick start
 
-1. Open the editor and pick an example under *File → Load example* to see how a finished test looks, or *File → New test case*.
+1. Open the editor and pick an example under *Load example* in the test-name menu (top left) to see how a finished test looks, or *New test case* there.
 2. Build the **Arrange** model: add stations on the map, create lines and add their stops in order, check the calendar dates.
-3. Fill in the **agency phone number and calendar dates you were assigned**. Generate stays blocked until the phone number is filled in.
+3. Fill in the **agency phone number and calendar dates you were assigned**. The editor warns you until the phone placeholder is replaced.
 4. Write the **Act** (first line: method name, second line: parameters separated by `;`).
 5. Set the **Expected result**: either an exception name, or copy the arrange model and edit it to the state after the act.
 6. Press **Generate**, unzip the download into your test directory, commit, submit, 💯 *profit*.
@@ -52,32 +44,57 @@ Everything runs locally in your browser; nothing is uploaded anywhere.
 
 Any current Chrome, Edge or Firefox, and Safari 16.4+. (Importing zips made by other tools uses the browser's built-in `DecompressionStream`; generating works everywhere regardless.)
 
+## 🛠️ Development
+
+The editor is **Vue 3 + TypeScript**, built with **Vite**, styled with **Tailwind CSS** and **shadcn-vue** components. It needs Node 22+:
+
+```
+npm install
+npm run dev        # http://localhost:5173, reloads on save
+npm test           # the test suite (vitest)
+npm run build      # type-check + production build into dist/
+npm run preview    # serve dist/ locally
+```
+
+The built `dist/` must be served over http (ES modules don't load from `file://`).
+
+**Tests** (`tests/`): every example must validate, survive a JSON round trip and generate. If you keep real, accepted submissions in a local `submitted-tests/` folder (one directory per test with `act.txt`, `arrange.zip`, …), each one is also imported, regenerated and compared with the original. That folder is gitignored and never enters the Docker image.
+
+**Examples** (`examples/`): the *Load example* entries, as plain test-case `.json` files (exactly what Export JSON produces). They are bundled at build time, so adding one means committing the file and redeploying.
+
 ### Hosting
 
-**Recommended: the included `Dockerfile`** (built for Coolify, works anywhere Docker does). It serves `web/` with nginx and already enables the directory listing that example auto-detection needs; `submitted-tests/` is never copied into the image. In Coolify: add the repo as an application, choose *Dockerfile* as the build pack, set the port to 80. Adding an example is then: commit a `.json` into `web/examples/`, redeploy, refresh.
+**Recommended: the included `Dockerfile`** (built for Coolify, works anywhere Docker does). It builds the editor and serves `dist/` with nginx (`deploy/nginx.conf`). In Coolify: add the repo as an application, choose *Dockerfile* as the build pack, set the port to 80.
 
-If you serve `web/` some other way instead, two things to know:
+Any static file server works too: run `npm run build` and serve `dist/`. The build uses relative paths, so it can live under any URL path.
 
-- **Set the web root to `web/`, not the repo root.** Otherwise everything else in the repo becomes downloadable too (including `submitted-tests/` if you keep real submissions there).
-- **Examples are auto-detected.** The editor discovers `examples/*.json` at startup, so dropping a new file into `web/examples/` shows up on the next refresh, if the server can list that directory. With nginx that means (see `deploy/nginx.conf`):
+### The look: IntelliJ "Islands"
 
-  ```nginx
-  location /examples/ {
-      autoindex on;
-      autoindex_format json;
-  }
-  ```
+The editor is styled after JetBrains IDEs (IntelliJ IDEA 2025.3+): rounded tool-window islands on the window background, tool-window stripes on the edges, editor-style tabs, a status bar, Inter + JetBrains Mono. All colors come from JetBrains' theme files in intellij-community (`platform/platform-resources/src/themes/islands/ManyIslands{Light,Dark}.theme.json`); see `src/style.css`.
 
-  `python3 -m http.server` and Caddy's `file_server browse` list directories out of the box. If your server cannot list directories, add a `web/examples/index.json` manifest instead, a plain JSON array of file names: `["example1_closeAreaOneEnd.json", "..."]`. The editor tries the listing first and falls back to the manifest.
+### Where to look for what
 
+| Vue concept | Where |
+|---|---|
+| Single-file components (`<script setup>`, `<template>`, scoped `<style>`) | `src/components/*.vue`, start with `ProblemsPanel.vue` (smallest) |
+| Props, `v-for`, `v-if`, `v-model` | `StationCard.vue`, `TestPanel.vue` |
+| `computed` with a getter **and** setter | `CalendarCard.vue` (days), `ActEditor.vue` (method) |
+| Shared state without a library ("store") | `src/composables/useEditor.ts` (module-level `ref`s) |
+| Watchers, debouncing, undo history (VueUse) | `useEditor.ts`: `watchDebounced`, `useManualRefHistory` |
+| Template refs and `defineExpose` | `MapPane.vue` calls `map.fit()` exposed by `MapView.vue` |
+| Rendering SVG declaratively | `MapView.vue`: everything drawn is `computed` from the store |
+| Promise-based dialog | `useConfirm.ts` + `ConfirmDialog.vue`: `if (await confirmDialog('…'))` |
+| Owning shadcn code | `src/components/ui/` is generated code you can edit; `resizable/ResizablePanel.vue` has a local fix |
+
+The non-UI logic lives in `src/lib/` as plain typed modules (no Vue in them except the language `ref` in `i18n.ts`): the model and validation, GTFS import/export, zip, CSV and the act.txt methods.
 
 ## Repo layout
 
-- `web/`: the web editor (plain HTML/CSS/JS, no build step); serve this directory as the web root
-- `web/examples/`: the *File → Load example* entries as plain test-case `.json` files (exactly what Export JSON produces). New files are picked up automatically on refresh; see Hosting.
-- `Dockerfile` + `deploy/nginx.conf`: container serving `web/` with nginx, example auto-detection preconfigured (see Hosting)
-- `tools/check.js`: the test suite. Checks that every script parses, unit-checks the model and act helpers, validates every example and, if a local `submitted-tests/` folder exists, round-trips the generator against real submissions.
-- `docs/`: images for this README (not served)
+- `src/`: the editor (`components/`, `composables/` for state, `lib/` for the logic without UI)
+- `examples/`: the built-in examples
+- `tests/`: the test suite
+- `Dockerfile` + `deploy/nginx.conf`: the container that builds and serves the editor
+- `docs/`: images for this README
 
 ## Extra resources
 

@@ -1,0 +1,176 @@
+/* "Islands" theme: mimics the look of JetBrains IDEs (IntelliJ IDEA 2025.3+).
+   Tool windows are rounded "islands" floating on the window background, with
+   6px gaps that double as resize handles; tool-window stripes sit on the edges
+   and a status bar runs along the bottom.
+
+   Every color below is taken from JetBrains' own theme files
+   (intellij-community: platform/platform-resources/src/themes/islands/
+   ManyIslands{Light,Dark}.theme.json on top of expUI/expUI_{light,dark}),
+   resolved to hex. Swing "arc" values are corner diameters, so Component.arc 8
+   is a 4px radius and Island.arc 20 a 10px radius. Token names stay shadcn's,
+   so the generated components in components/ui pick them up unchanged. */
+
+@import "@fontsource-variable/inter";            /* IntelliJ's UI font */
+@import "@fontsource-variable/jetbrains-mono";   /* IntelliJ's editor font: act.txt, stop times */
+
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn-vue/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-sans: 'Inter Variable', system-ui, sans-serif;
+    --font-heading: var(--font-sans);
+    --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-surface: var(--surface);
+    --color-surface-strong: var(--surface-strong);
+    --color-field: var(--field);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+    --color-signal: var(--signal);
+    --color-signal-foreground: var(--signal-foreground);
+    --color-chrome: var(--chrome);
+    --color-warn: var(--warn);
+    --color-ok: var(--ok);
+    --color-selection: var(--selection);
+    --color-selection-inactive: var(--selection-inactive);
+    --color-tab-selected: var(--tab-selected);
+    --color-link: var(--link);
+}
+
+/* Component.arc 8 -> 4px controls; Island.arc 20 -> 10px islands */
+@theme {
+    --radius-sm: 3px;
+    --radius-md: 4px;
+    --radius-lg: 4px;
+    --radius-xl: 6px;
+    --radius-2xl: 10px;
+    --radius-4xl: 10px;
+}
+
+/* Islands Light (with light header) */
+:root, .light {
+    --radius: 6px;
+
+    --chrome: #e9eaee;              /* MainWindow / MainToolbar / StatusBar / stripes, and the gaps between islands */
+    --surface: #ffffff;             /* ToolWindow.background: the islands */
+    --surface-strong: #ffffff;      /* tool window headers sit on the island itself */
+    --background: #ffffff;          /* editor (the map) */
+    --foreground: #000000;          /* text-default */
+    --muted-foreground: #73767c;    /* *.infoForeground (4.55:1 on white) */
+    --field: #ffffff;               /* TextField.background */
+    --card: #ffffff;
+    --card-foreground: #000000;
+    --popover: #ffffff;
+    --popover-foreground: #000000;
+    --primary: #3871e1;             /* Button.default.startBackground (accent-brand-bg) */
+    --primary-foreground: #ffffff;
+    --secondary: #00000012;         /* ActionButton.hoverBackground */
+    --secondary-foreground: #000000;
+    --muted: #00000012;
+    --accent: #00000012;
+    --accent-foreground: #000000;
+    --destructive: #a4414a;         /* red-70 */
+    --border: #d1d3d9;              /* Component.borderColor */
+    --input: #d1d3d9;
+    --ring: #3871e1;
+    --selection: #d0dffe;           /* *.selectionBackground */
+    --selection-inactive: #e9eaee;  /* *.selectionInactiveBackground */
+    --tab-selected: #e3ebfe;        /* EditorTabs.underlinedTabBackground */
+    --link: #2f5eb9;                /* Link.activeForeground */
+    --signal: #3871e1;              /* selection + main action are IntelliJ blue here */
+    --signal-foreground: #ffffff;
+    --warn: #c28013;                /* Component.warningFocusColor */
+    --ok: #2a6e47;                  /* green-70 */
+
+    --map-bg: #ffffff;
+    --grid: #ebecf0;
+    --grid-axis: #c9ccd6;
+    --grid-label: #73767c;
+    --project-tint: 0.2;            /* strength of the project-color glow in the toolbar's corner */
+}
+
+/* Islands Dark */
+.dark {
+    --chrome: #26282c;
+    --surface: #191a1c;
+    --surface-strong: #191a1c;
+    --background: #191a1c;
+    --foreground: #d1d3d9;
+    /* IntelliJ's own #73767c is 3.8:1 here; the next palette step keeps hints at 6.8:1 */
+    --muted-foreground: #9fa2a8;
+    --field: #191a1c;
+    --card: #191a1c;
+    --card-foreground: #d1d3d9;
+    --popover: #26282c;
+    --popover-foreground: #d1d3d9;
+    --primary: #3871e1;
+    --primary-foreground: #ffffff;
+    --secondary: #ffffff17;
+    --secondary-foreground: #d1d3d9;
+    --muted: #ffffff17;
+    --accent: #ffffff17;
+    --accent-foreground: #d1d3d9;
+    --destructive: #f57e84;         /* red-100 */
+    --border: #40434a;
+    --input: #40434a;
+    --ring: #3871e1;
+    --selection: #2a4371;
+    --selection-inactive: #33353b;
+    --tab-selected: #233558;
+    --link: #71a1fe;
+    --signal: #3871e1;
+    --signal-foreground: #ffffff;
+    --warn: #d59637;                /* yellow-100 */
+    --ok: #6db083;                  /* green-100 */
+
+    --map-bg: #191a1c;
+    --grid: #232427;
+    --grid-axis: #40434a;
+    --grid-label: #9fa2a8;
+    --project-tint: 0.32;
+}
+
+/* IntelliJ's project-color glow, spreading from the window's top-left corner in
+   the colors of the project tile. It is painted on the window background, so it
+   shows continuously around the (opaque) islands: toolbar, gaps, status bar. */
+.project-tint {
+    background-image:
+        radial-gradient(ellipse 340px 120px at 0 0, color-mix(in oklch, #3871e1 calc(var(--project-tint) * 100%), transparent), transparent),
+        radial-gradient(ellipse 75vw 110vh at 0 0, color-mix(in oklch, #9f6cf5 calc(var(--project-tint) * 45%), transparent), transparent 70%);
+}
+
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+    html { font-size: 16px; }
+    body {
+        @apply bg-chrome text-foreground font-sans;
+        font-size: 13px;                   /* IntelliJ's default UI size */
+        font-variant-numeric: tabular-nums;
+    }
+    /* IntelliJ's focus: a 2px accent-blue outline */
+    :focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: 1px;
+    }
+}
