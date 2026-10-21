@@ -44,9 +44,13 @@ onMounted(() => {
     if (refs[name].value?.isCollapsed) panels[name] = false
 })
 
-// ---- keyboard shortcuts (inside form fields the browser's own undo etc. win) ----------
+// ---- keyboard shortcuts (inside text fields the browser's own undo etc. win) ----------
+// selects, checkboxes, color pickers etc. have no undo of their own: Ctrl+Z undoes their change
+const NON_TEXT_INPUTS = ['checkbox', 'radio', 'color', 'range', 'file', 'button', 'submit', 'reset', 'image']
 useEventListener(document, 'keydown', (ev: KeyboardEvent) => {
-  if ((ev.target as Element).closest?.('input, textarea, select, [role="dialog"]')) return
+  const el = ev.target as HTMLElement
+  if (el.isContentEditable || el.closest?.('textarea, [role="dialog"], [role="alertdialog"]')) return
+  if (el instanceof HTMLInputElement && !NON_TEXT_INPUTS.includes(el.type)) return
   const key = ev.key.toLowerCase()
   if ((ev.ctrlKey || ev.metaKey) && (key === 'z' || key === 'y')) {
     ev.preventDefault()

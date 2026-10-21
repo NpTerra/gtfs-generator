@@ -49,11 +49,16 @@ export async function applyGtfsImport() {
   const { feed, selected, target, oneTripPerLine } = gtfsImport
   if (!feed || selected.size === 0) return
   const building = toast.loading(t('gtfs.reading'))
-  await new Promise(r => setTimeout(r, 30)) // let the toast paint: big feeds take a few seconds
-  const model = feed.build([...selected], oneTripPerLine)
-  replaceModel(target, model)
-  gtfsImport.open = false
-  toast.success(t('toast.importedRoutes', {
-    n: model.lines.length, stations: model.stations.length, target: target === 'expected' ? 'Expected' : 'Arrange',
-  }), { id: building })
+  try {
+    await new Promise(r => setTimeout(r, 30)) // let the toast paint: big feeds take a few seconds
+    const model = feed.build([...selected], oneTripPerLine)
+    replaceModel(target, model)
+    gtfsImport.open = false
+    toast.success(t('toast.importedRoutes', {
+      n: model.lines.length, stations: model.stations.length, target: target === 'expected' ? 'Expected' : 'Arrange',
+    }), { id: building })
+  } catch (err) {
+    console.error(err)
+    toast.error(t('toast.importFailed', { msg: (err as Error).message }), { id: building })
+  }
 }

@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import * as acts from '../src/lib/acts'
 import * as csv from '../src/lib/csv'
 import * as gtfs from '../src/lib/gtfs'
+import { t } from '../src/lib/i18n'
 import * as M from '../src/lib/model'
 import * as zip from '../src/lib/zip'
 
@@ -21,19 +22,18 @@ const table = (files: Record<string, Uint8Array>, name: string) => files[name] ?
 const fileData = (files: zip.ZipEntry[], name: string) => files.find(f => f.name === name)?.data
 
 describe.each(readdirSync(EXAMPLES).filter(f => f.endsWith('.json')))('example %s', (file) => {
-  const tc = M.fromJSON(readFileSync(join(EXAMPLES, file), 'utf8'))
+  const text = readFileSync(join(EXAMPLES, file), 'utf8')
+  const tc = M.fromJSON(text)
 
-  it('validates without errors and survives a JSON round trip', () => {
+  it('validates without errors and is exactly what Export JSON writes', () => {
     expect(M.validate(tc).filter(p => p.level === 'error')).toEqual([])
-    expect(M.toJSON(M.fromJSON(M.toJSON(tc)))).toBe(M.toJSON(tc))
+    expect(M.toJSON(tc) + '\n').toBe(text)
   })
 
-  it('generates, with coordinates in range even at the largest random offset', async () => {
-    const offset = gtfs.pickOffsets({ ...tc, randomizeOffsets: true }, () => 0.99)
-    const files = gtfs.buildTestFiles(tc, offset)
+  it('generates arrange.zip with stops', async () => {
+    const files = gtfs.buildTestFiles(tc)
     const stops = table(await zip.read(fileData(files, 'arrange.zip') as Uint8Array), 'stops.txt')
     expect(stops.length).toBeGreaterThan(0)
-    expect(stops.filter(s => Math.abs(+s.stop_lat) > 85 || Math.abs(+s.stop_lon) > 180)).toEqual([])
   })
 })
 
@@ -55,6 +55,20 @@ it('model helpers', () => {
   const warnings = M.validate(tc).filter(p => p.level === 'warning').map(p => p.text).join('\n')
   expect(warnings).toContain('named "A"')
   expect(warnings).toContain('ends before it starts')
+  const nameError = (name: string) => M.validate({ ...M.defaultTestCase(), name }).some(p => p.text === t('v.badName'))
+  expect(['.', '..', 'a/b', ''].map(nameError)).toEqual([true, true, true, true])
+  expect(nameError('v1.2 test')).toBe(false)
+
+  // the inactive expected result survives a JSON round trip (autosave, export)
+  tc.expected.type = 'exception'
+  expect(M.fromJSON(M.toJSON(tc)).expected.model.stations).toHaveLength(3)
+
+  // a failed conversion (latitude at a pole) leaves the station unchanged
+  const station = M.makeStation(1, 'A', 10, 20)
+  const before = { ...station }
+  expect(() => M.setStationGPS(station, 90, 0)).toThrow()
+  expect(() => M.setStationXY(station, 0, 90 * 110574)).toThrow()
+  expect(station).toEqual(before)
 
   const enc = new TextEncoder()
   const files = {
@@ -70,6 +84,8 @@ it('act.txt split/join keeps field positions', () => {
   expect(acts.join({ ...act, params: ['', '10'] })).toBe('DIVERT_LINE\n;10')
   expect(acts.join({ method: 'CLOSE_AREA', params: ['A', ''], rest: [] })).toBe('CLOSE_AREA\nA')
   expect(acts.join(acts.split('CLOSE_AREA\nA;10\nL1;L2'))).toBe('CLOSE_AREA\nA;10\nL1;L2')
+  expect(acts.split('\nCLOSE_AREA\n\n A;10 \n')).toEqual({ method: 'CLOSE_AREA', params: ['A', '10'], rest: [] }) // blank lines skipped
+  expect(acts.split(acts.join({ method: 'CLOSE_AREA', params: ['', ''], rest: ['L1'] })).rest).toEqual(['L1'])
 
   const keys = (text: string) => acts.checkAct(text, M.defaultTestCase().arrange).map(p => p.key)
   expect(keys('CLOSE_AREA\nA;10')).toEqual([])
@@ -96,7 +112,6 @@ describe.skipIf(submissions.length === 0)('submitted-tests round trip', () => {
       name: dir,
       description: readTxt('comment.txt') ?? '',
       act: readTxt('act.txt') ?? '',
-      randomizeOffsets: false,
       agency: agency ?? { name: '', url: '', timezone: '', language: '', phone: '' },
       arrange,
       expected: { type: 'model', exception: 'INVALID_ARGUMENT', model: M.emptyModel() },
@@ -108,7 +123,7 @@ describe.skipIf(submissions.length === 0)('submitted-tests round trip', () => {
 
     const tc2 = M.fromJSON(M.toJSON(tc))
     expect(M.validate(tc2).filter(p => p.level === 'error')).toEqual([]) // real, accepted tests
-    const generated = gtfs.buildTestFiles(tc2, { lat: 0, lon: 0 })
+    const generated = gtfs.buildTestFiles(tc2)
     expect(fileData(generated, 'comment.txt')).toBe(tc.description + '\n')
     expect(fileData(generated, 'act.txt')).toBe(tc.act + '\n')
 

@@ -48,20 +48,22 @@ export const METHODS: Record<string, MethodSpec> = {
 
 export interface Act { method: string; params: string[]; rest: string[] }
 
-// positional split, so an empty field keeps its place: "CLOSE_AREA\n;10"
+// blank lines are skipped; within the parameter line the split is positional,
+// so an empty field keeps its place: "CLOSE_AREA\n;10"
 export function split(act: string): Act {
-  const lines = String(act ?? '').split('\n').map(s => s.trim())
+  const lines = String(act ?? '').split('\n').map(s => s.trim()).filter(s => s !== '')
   return {
     method: lines[0] ?? '',
     params: lines.length > 1 ? lines[1].split(';').map(s => s.trim()) : [],
-    rest: lines.slice(2).filter(s => s !== ''),
+    rest: lines.slice(2),
   }
 }
 
 export function join({ method, params, rest }: Act): string {
   const p = [...params]
   while (p.length > 0 && p[p.length - 1] === '') p.pop()
-  return [method, ...(p.length > 0 || rest.length > 0 ? [p.join(';')] : []), ...rest].join('\n')
+  // all-empty params before more lines: ";" keeps the line from being blank (and skipped)
+  return [method, ...(p.length > 0 || rest.length > 0 ? [p.join(';') || ';'] : []), ...rest].join('\n')
 }
 
 // the act's parameter values grouped per declared param

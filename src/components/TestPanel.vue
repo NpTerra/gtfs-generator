@@ -6,7 +6,6 @@ import FormField from '@/components/FormField.vue'
 import PanelHeader from '@/components/PanelHeader.vue'
 import PanelSection from '@/components/PanelSection.vue'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
@@ -36,13 +35,6 @@ async function copyArrange() {
         <FormField label="Act (act.txt)" :hint="t('hint.act')">
           <ActEditor />
         </FormField>
-        <div class="flex items-start gap-2">
-          <Checkbox id="randomize" v-model="tc.randomizeOffsets" class="mt-0.5" />
-          <div class="grid gap-1">
-            <Label for="randomize">Randomize GPS offsets on generate</Label>
-            <p class="text-[13px] leading-snug text-muted-foreground">{{ t('hint.randomize') }}</p>
-          </div>
-        </div>
       </PanelSection>
 
       <PanelSection id="expected" title="Expected result">

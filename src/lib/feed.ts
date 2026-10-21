@@ -6,8 +6,10 @@
 //   - platforms are merged into their parent station (act.txt names stations)
 //   - only stops used by the picked lines become stations, in GPS mode so
 //     their coordinates stay exact
-//   - trips: by default one per line; optionally every trip that has the same
-//     stop pattern as the line (the line's times apply to all of them anyway)
+//   - trips: one per line, or every trip of the route with the same stop count
+//     and the same first and last stop as the line (the line's times apply to
+//     all of them anyway); the dialog picks one per line when some route has
+//     more than 5 such trips
 //   - calendars come from calendar.txt, or are derived from calendar_dates.txt
 // The agency is left alone: the test keeps its assigned phone number.
 
@@ -41,6 +43,8 @@ const routeColor = (raw: string | undefined, i: number) =>
 const patternOf = (t: TripInfo) => `${t.count}|${t.first}|${t.last}`
 
 export function readFeed(files: Record<string, Uint8Array>): Feed {
+  // a zipped folder has its files under "feed/stops.txt"
+  files = Object.fromEntries(Object.entries(files).map(([name, data]) => [name.split('/').pop()!, data]))
   const decoder = new TextDecoder()
   const text = (name: string) => files[name] ? decoder.decode(files[name]) : ''
   const table = (name: string) => csv.parse(text(name))
@@ -58,7 +62,7 @@ export function readFeed(files: Record<string, Uint8Array>): Feed {
   let col: Record<string, number> = {}
   csv.forEachRowInBytes(stopTimes, h => { col = Object.fromEntries(h.map((name, i) => [name, i])) }, r => {
     const trip = trips.get(r[col.trip_id])
-    if (!trip) return
+    if (!trip || !stops.has(r[col.stop_id])) return // broken feeds: skip stops missing from stops.txt
     const seq = Number(r[col.stop_sequence])
     trip.count++
     if (seq < trip.minSeq) { trip.minSeq = seq; trip.first = r[col.stop_id] }
@@ -107,7 +111,7 @@ export function readFeed(files: Record<string, Uint8Array>): Feed {
     const rows = new Map<string, { seq: number; stop: string; arrival: string; departure: string }[]>()
     csv.forEachRowInBytes(stopTimes, () => {}, r => {
       const tripId = r[col.trip_id]
-      if (!repIds.has(tripId)) return
+      if (!repIds.has(tripId) || !stops.has(r[col.stop_id])) return
       if (!rows.has(tripId)) rows.set(tripId, [])
       rows.get(tripId)!.push({ seq: Number(r[col.stop_sequence]), stop: r[col.stop_id], arrival: r[col.arrival_time] ?? '', departure: r[col.departure_time] ?? '' })
     })
@@ -166,7 +170,7 @@ export function readFeed(files: Record<string, Uint8Array>): Feed {
 
     // calendars of the services the kept trips run on
     const calendarRows = new Map(table('calendar.txt').map(c => [c.service_id, c]))
-    const dateRows = calendarRows.size < calendarIds.size ? table('calendar_dates.txt') : []
+    const dateRows = [...calendarIds.keys()].some(s => !calendarRows.has(s)) ? table('calendar_dates.txt') : []
     const iso = (d: string) => /^\d{8}$/.test(d) ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}` : d
     for (const [service, id] of calendarIds) {
       const c = calendarRows.get(service)

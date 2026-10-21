@@ -60,10 +60,10 @@ export function parse(text: string): Record<string, string>[] {
 }
 
 // Streaming row reader for (possibly huge) CSV files: real feeds' stop_times.txt
-// can be 500+ MB, past what one JS string can hold. Text is pushed in chunks and
-// read line by line; lines without quotes take a fast split(',') path, and a
-// quoted field may even span lines. onHeader gets the header row first, then
-// onRow every data row as an array of fields.
+// can be 500+ MB, past what one JS string can hold in Chrome/V8. Text is pushed
+// in chunks and read line by line; lines without quotes take a fast split(',')
+// path, and a quoted field may even span lines. onHeader gets the header row
+// first, then onRow every data row as an array of fields.
 export function createRowReader(onHeader: (header: string[]) => void, onRow: (row: string[]) => void) {
   let rest = '' // an incomplete last line, waiting for the next chunk
   let pending = '' // lines of a record whose quoted field spans lines

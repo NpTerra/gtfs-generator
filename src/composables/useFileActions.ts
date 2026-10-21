@@ -53,7 +53,9 @@ export async function importFile(file: File) {
       return
     }
 
-    const files = await zip.read(new Uint8Array(await file.arrayBuffer()))
+    // by file name alone: a zipped folder has its files under "folder/act.txt"
+    const entries = await zip.read(new Uint8Array(await file.arrayBuffer()))
+    const files = Object.fromEntries(Object.entries(entries).map(([name, data]) => [name.split('/').pop()!, data]))
 
     if (files['act.txt'] || files['arrange.zip']) {
       // a full submission zip (act.txt + comment.txt + arrange.zip + assert.*)
@@ -65,7 +67,6 @@ export async function importFile(file: File) {
       next.name = file.name.replace(/\.zip$/i, '')
       next.description = text('comment.txt')
       next.act = text('act.txt')
-      next.randomizeOffsets = false
       next.arrange = M.emptyModel()
       next.expected = { type: 'model', exception: 'INVALID_ARGUMENT', model: M.emptyModel() }
       if (files['arrange.zip']) {
@@ -116,12 +117,8 @@ export function generate() {
   }
 
   try {
-    const offset = current.randomizeOffsets ? gtfs.pickOffsets(current) : { lat: 0, lon: 0 }
-    download(current.name + '.zip', zip.create(gtfs.buildTestFiles(current, offset)) as BlobPart, 'application/zip')
-    const sign = (v: number) => (v >= 0 ? '+' : '') + v
-    toast.success(t('toast.generated', { name: current.name }), {
-      description: current.randomizeOffsets ? t('toast.offset', { lat: sign(offset.lat), lon: sign(offset.lon) }) : undefined,
-    })
+    download(current.name + '.zip', zip.create(gtfs.buildTestFiles(current)) as BlobPart, 'application/zip')
+    toast.success(t('toast.generated', { name: current.name }))
   } catch (err) {
     console.error(err)
     toast.error(t('toast.generateFailed', { msg: (err as Error).message }))

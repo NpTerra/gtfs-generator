@@ -3,7 +3,6 @@
   "name": "example3_divertLine",
   "description": "Szintetikus tanulópélda: építsd át sajátra beadás előtt!\nA Z2 vonal sikeres átterelése a Walk;Tower;Campus útvonalra (a kiválasztott megállók a Z9 vonalon szomszédosak).\nA kimaradó Theater megálló vonal nélkül marad, ezért törlődik a modellből.",
   "act": "DIVERT_LINE\nZ2;Walk;Tower;Campus",
-  "randomizeOffsets": true,
   "agency": {
     "name": "Your Transit Agency",
     "url": "http://www.yourtransitagency.com",
@@ -147,6 +146,7 @@
   },
   "expected": {
     "type": "model",
+    "exception": "INVALID_ARGUMENT",
     "model": {
       "stations": [
         {

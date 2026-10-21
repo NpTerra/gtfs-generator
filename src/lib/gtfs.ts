@@ -7,8 +7,6 @@ import * as zip from './zip'
 import type { Agency, Calendar, Model, TestCase } from './model'
 import { emptyModel, normalizeTime, round6, syncFromGPS, syncFromXY } from './model'
 
-export interface Offset { lat: number; lon: number }
-
 const cols = (pairs: [string, string][]) => pairs.map(([key, header]) => ({ key, header }))
 const COLS = {
   agency: cols([['name', 'agency_name'], ['url', 'agency_url'], ['timezone', 'agency_timezone'], ['language', 'agency_lang'], ['phone', 'agency_phone']]),
@@ -23,10 +21,8 @@ const COLS = {
 
 export const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 
-// offset: whole degrees added to every station's GPS position
-export function modelToGTFSFiles(model: Model, agency: Agency, offset?: Offset, fallbackCalendars?: Calendar[]): zip.ZipEntry[] {
-  const off = offset ?? { lat: 0, lon: 0 }
-  const stops = model.stations.map(s => ({ id: 'S' + s.id, name: s.name, lat: s.lat + off.lat, lon: s.lon + off.lon }))
+export function modelToGTFSFiles(model: Model, agency: Agency, fallbackCalendars?: Calendar[]): zip.ZipEntry[] {
+  const stops = model.stations.map(s => ({ id: 'S' + s.id, name: s.name, lat: s.lat, lon: s.lon }))
   const routes = model.lines.map(l => ({
     id: 'R' + l.id, shortName: l.shortName, longName: l.name, type: l.type,
     color: String(l.color ?? '').replace(/^#/, '').toUpperCase(),
@@ -69,36 +65,17 @@ export function modelToGTFSFiles(model: Model, agency: Agency, offset?: Offset, 
   ]
 }
 
-// Random whole-degree offsets (anti-plagiarism) that keep every station of
-// both models on valid, non-wrapping coordinates.
-export function pickOffsets(tc: TestCase, rand: () => number = Math.random): Offset {
-  const stations = [...tc.arrange.stations, ...(tc.expected.type === 'model' ? tc.expected.model.stations : [])]
-  let minLat = 0, maxLat = 0, minLon = 0, maxLon = 0
-  for (const s of stations) {
-    minLat = Math.min(minLat, s.lat); maxLat = Math.max(maxLat, s.lat)
-    minLon = Math.min(minLon, s.lon); maxLon = Math.max(maxLon, s.lon)
-  }
-  // keep results within lat ±80 and lon ±179
-  const latLo = Math.max(-60, Math.ceil(-80 - minLat))
-  const latHi = Math.min(60, Math.floor(80 - maxLat))
-  const lonLo = Math.max(-150, Math.ceil(-179 - minLon))
-  const lonHi = Math.min(150, Math.floor(179 - maxLon))
-  const pick = (lo: number, hi: number) => lo > hi ? 0 : lo + Math.floor(rand() * (hi - lo + 1))
-  return { lat: pick(latLo, latHi), lon: pick(lonLo, lonHi) }
-}
-
 // The four submission files.
-export function buildTestFiles(tc: TestCase, offset?: Offset): zip.ZipEntry[] {
-  const off = tc.randomizeOffsets ? (offset ?? pickOffsets(tc)) : { lat: 0, lon: 0 }
+export function buildTestFiles(tc: TestCase): zip.ZipEntry[] {
   const files: zip.ZipEntry[] = [
     { name: 'comment.txt', data: tc.description + '\n' },
     { name: 'act.txt', data: tc.act + '\n' },
-    { name: 'arrange.zip', data: zip.create(modelToGTFSFiles(tc.arrange, tc.agency, off)) },
+    { name: 'arrange.zip', data: zip.create(modelToGTFSFiles(tc.arrange, tc.agency)) },
   ]
   if (tc.expected.type === 'exception')
     files.push({ name: 'assert.txt', data: tc.expected.exception + '\n' })
   else
-    files.push({ name: 'assert.zip', data: zip.create(modelToGTFSFiles(tc.expected.model, tc.agency, off, tc.arrange.calendars)) })
+    files.push({ name: 'assert.zip', data: zip.create(modelToGTFSFiles(tc.expected.model, tc.agency, tc.arrange.calendars)) })
   return files
 }
 

@@ -3,7 +3,6 @@
   "name": "example2_notPositiveRadius",
   "description": "Szintetikus tanulópélda: építsd át sajátra beadás előtt!\nA megadott lezárási sugár nem pozitív, ezért INVALID_ARGUMENT kivételt várunk, a modellnek pedig változatlannak kell maradnia.",
   "act": "CLOSE_AREA\nBridge;0",
-  "randomizeOffsets": true,
   "agency": {
     "name": "Your Transit Agency",
     "url": "http://www.yourtransitagency.com",
@@ -87,6 +86,12 @@
   },
   "expected": {
     "type": "exception",
-    "exception": "INVALID_ARGUMENT"
+    "exception": "INVALID_ARGUMENT",
+    "model": {
+      "stations": [],
+      "lines": [],
+      "calendars": [],
+      "trips": []
+    }
   }
 }

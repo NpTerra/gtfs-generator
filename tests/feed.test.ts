@@ -89,6 +89,25 @@ describe('readFeed', () => {
     expect(validate(tc).filter(p => p.level === 'error')).toEqual([])
   })
 
+  it('reads calendar_dates.txt when only some used services are in calendar.txt', () => {
+    const withWeekend = { ...files, ...feedFiles({ 'calendar.txt': `service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date
+WK,1,1,1,1,1,0,0,20250101,20251231
+WE,0,0,0,0,0,1,1,20250101,20251231` }) }
+    const m = readFeed(withWeekend).build(['R20'], true) // 2 calendars, 1 used service, which is calendar_dates-only
+    expect(m.calendars[0]).toMatchObject({ start: '2025-01-05', availability: [0, 0, 0, 0, 0, 0, 1] })
+  })
+
+  it('reads a feed zipped inside a folder', () => {
+    const nested = Object.fromEntries(Object.entries(files).map(([name, data]) => ['feed/' + name, data]))
+    expect(readFeed(nested).routes).toHaveLength(3)
+  })
+
+  it('skips stop_times rows whose stop is missing from stops.txt', () => {
+    const broken = { ...files, 'stop_times.txt': enc.encode(new TextDecoder().decode(files['stop_times.txt']) + 'T1,08:20:00,08:20:00,GONE,4\n') }
+    const m = readFeed(broken).build(['R10'], true)
+    expect(m.lines[0].stops).toHaveLength(3)
+  })
+
   it('rejects a zip without stops.txt', () => {
     expect(() => readFeed(feedFiles({ 'routes.txt': 'route_id\nR1' }))).toThrow(/stops\.txt/)
   })

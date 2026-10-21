@@ -24,7 +24,6 @@ export interface TestCase {
   name: string
   description: string
   act: string
-  randomizeOffsets: boolean
   agency: Agency
   arrange: Model
   expected: Expected
@@ -69,16 +68,14 @@ export function makeStation(id: number, name: string, x: number, y: number): Sta
   return s
 }
 
+// the conversion runs before anything is assigned, so when it throws (latitude
+// at a pole) the station stays unchanged
 export function setStationXY(station: Station, x: number, y: number) {
-  station.x = x
-  station.y = y
-  syncFromXY(station)
+  Object.assign(station, { x, y }, xyToGPS(x, y))
 }
 
 export function setStationGPS(station: Station, lat: number, lon: number) {
-  station.lat = lat
-  station.lon = lon
-  syncFromGPS(station)
+  Object.assign(station, { lat, lon }, gpsToXY(lat, lon))
 }
 
 // ---- factories ------------------------------------------------------------------
@@ -131,7 +128,6 @@ export function defaultTestCase(): TestCase {
     name: 'my_test',
     description: 'Describe what this test verifies.',
     act: 'CLOSE_AREA\nA;10',
-    randomizeOffsets: true,
     agency: {
       name: 'Your Transit Agency',
       url: 'http://www.yourtransitagency.com',
@@ -183,12 +179,10 @@ export function toJSON(tc: TestCase): string {
     name: tc.name,
     description: tc.description,
     act: tc.act,
-    randomizeOffsets: tc.randomizeOffsets,
     agency: { ...tc.agency },
     arrange: mapModel(tc.arrange),
-    expected: tc.expected.type === 'exception'
-      ? { type: 'exception', exception: tc.expected.exception }
-      : { type: 'model', model: mapModel(tc.expected.model) },
+    // both, so switching the type back (or reloading) keeps the other one
+    expected: { type: tc.expected.type, exception: tc.expected.exception, model: mapModel(tc.expected.model) },
   }, null, 2)
 }
 
@@ -254,7 +248,6 @@ export function fromJSON(text: string): TestCase {
     name: String(raw.name ?? 'unnamed_test'),
     description: String(raw.description ?? ''),
     act: String(raw.act ?? ''),
-    randomizeOffsets: raw.randomizeOffsets !== false,
     agency: {
       name: String(raw.agency?.name ?? ''),
       url: String(raw.agency?.url ?? ''),
@@ -333,7 +326,8 @@ function validateModel(model: Model, label: string, problems: Problem[]) {
 export function validate(tc: TestCase): Problem[] {
   const problems: Problem[] = []
 
-  if (!tc.name || !/^[A-Za-z0-9_\-. ]+$/.test(tc.name)) problems.push({ level: 'error', text: t('v.badName') })
+  // "." and ".." pass the character check but are no usable zip/folder name
+  if (!/^[A-Za-z0-9_\-. ]+$/.test(tc.name) || !/[^. ]/.test(tc.name)) problems.push({ level: 'error', text: t('v.badName') })
   if (!tc.description?.trim()) problems.push({ level: 'warning', text: t('v.noDescription') })
   if (!tc.act?.trim()) problems.push({ level: 'error', text: t('v.noAct') })
   for (const p of checkAct(tc.act, tc.arrange)) problems.push({ level: 'warning', text: t(p.key, p.params) })
