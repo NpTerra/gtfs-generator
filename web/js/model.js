@@ -39,16 +39,16 @@
         return s;
     }
 
+    // both convert first, so a position that can't be converted (a pole)
+    // throws without leaving half-updated coordinates in the model
     function setStationXY(station, x, y) {
-        station.x = x;
-        station.y = y;
-        syncFromXY(station);
+        const gps = xyToGPS(x, y);
+        Object.assign(station, { x, y, lat: gps.lat, lon: gps.lon });
     }
 
     function setStationGPS(station, lat, lon) {
-        station.lat = lat;
-        station.lon = lon;
-        syncFromGPS(station);
+        const xy = gpsToXY(lat, lon);
+        Object.assign(station, { lat, lon, x: xy.x, y: xy.y });
     }
 
     // ---- factories -------------------------------------------------------
@@ -87,7 +87,6 @@
             name: "my_test",
             description: "Describe what this test verifies.",
             act: "CLOSE_AREA\nA;10",
-            randomizeOffsets: true,
             agency: {
                 name: "Your Transit Agency",
                 url: "http://www.yourtransitagency.com",
@@ -178,12 +177,10 @@
             name: tc.name,
             description: tc.description,
             act: tc.act,
-            randomizeOffsets: tc.randomizeOffsets,
             agency: { ...tc.agency },
             arrange: mapModel(tc.arrange),
-            expected: tc.expected.type === "exception"
-                ? { type: "exception", exception: tc.expected.exception }
-                : { type: "model", model: mapModel(tc.expected.model) }
+            // both, so switching the type (or undoing past a switch) loses neither
+            expected: { type: tc.expected.type, exception: tc.expected.exception, model: mapModel(tc.expected.model) }
         };
         return JSON.stringify(out, null, 2);
     }
@@ -250,7 +247,6 @@
             name: String(raw.name ?? "unnamed_test"),
             description: String(raw.description ?? ""),
             act: String(raw.act ?? ""),
-            randomizeOffsets: raw.randomizeOffsets !== false,
             agency: {
                 name: String(raw.agency?.name ?? ""),
                 url: String(raw.agency?.url ?? ""),

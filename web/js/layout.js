@@ -45,7 +45,7 @@
         const r = layout.getBoundingClientRect();
         const max = split.other
             ? r.width - document.getElementById(split.other).offsetWidth - MIN_MAP_WIDTH
-            : r.height * .7;
+            : Math.min(r.height * .7, innerHeight * .6); // .6: the cap in style.css
         state[split.prop] = Math.round(Math.max(split.min, Math.min(max, size))) + "px";
         apply();
     }

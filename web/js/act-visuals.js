@@ -57,20 +57,22 @@
         }
     };
 
-    // positional split, so an empty field keeps its place: "CLOSE_AREA\n;10"
+    // positional split, so an empty field keeps its place: "CLOSE_AREA\n;10";
+    // blank lines are skipped
     function split(act) {
-        const lines = String(act ?? "").split("\n").map(s => s.trim());
+        const lines = String(act ?? "").split("\n").map(s => s.trim()).filter(s => s !== "");
         return {
             method: lines[0] ?? "",
             params: lines.length > 1 ? lines[1].split(";").map(s => s.trim()) : [],
-            rest: lines.slice(2).filter(s => s !== "")
+            rest: lines.slice(2)
         };
     }
 
     function join({ method, params, rest }) {
         const p = [...params];
         while (p.length > 0 && p[p.length - 1] === "") p.pop();
-        return [method, ...(p.length > 0 || rest.length > 0 ? [p.join(";")] : []), ...rest].join("\n");
+        // all-empty params before more lines: ";" keeps the line from being blank (and skipped)
+        return [method, ...(p.length > 0 || rest.length > 0 ? [p.join(";") || ";"] : []), ...rest].join("\n");
     }
 
     // the act's parameter values grouped per declared param: [{ param, values }]

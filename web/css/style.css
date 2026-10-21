@@ -43,11 +43,11 @@
     --grid-label: #9aa3af;
 
     /* type scale */
-    --fs-2xs: 10.5px;  /* map annotations */
+    --fs-2xs: 10.5px;  /* map annotations, stop-list header */
     --fs-xs: 11.5px;   /* hints, small labels */
     --fs-sm: 12.5px;   /* labels, badges, dense controls, messages */
     --fs-md: 14px;     /* body */
-    --fs-lg: 15px;     /* brand, empty states */
+    --fs-lg: 15px;     /* brand, map message */
     --mono: ui-monospace, Consolas, monospace;
 
     --radius: 8px;
@@ -246,7 +246,7 @@ button:has(> .i), .brand, .chip { display: inline-flex; align-items: center; gap
     /* the 40vw caps keep saved sizes from crushing the map in a smaller window */
     --test-w: min(var(--test-size, clamp(260px, 24vw, 380px)), 40vw);
     --model-w: min(var(--model-size, clamp(300px, 28vw, 440px)), 40vw);
-    --problems-h: var(--problems-size, 150px);
+    --problems-h: min(var(--problems-size, 150px), 60vh); /* a size saved in a taller window can't squeeze out the map */
     --split-test: 5px;
     --split-model: 5px;
     --split-problems: 5px;
@@ -633,8 +633,8 @@ input[type="color"]::-webkit-color-swatch { border: none; border-radius: 4px; }
 
 #map-hint {
     position: absolute;
-    bottom: 8px;
-    left: 12px;
+    bottom: 24px;  /* clear of the x-axis labels along the bottom edge */
+    left: 48px;    /* and the y-axis labels along the left edge */
     font-size: var(--fs-xs);
     pointer-events: none;
     background: color-mix(in srgb, var(--panel) 75%, transparent);

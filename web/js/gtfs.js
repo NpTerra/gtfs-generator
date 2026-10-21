@@ -59,15 +59,12 @@
 
     const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
-    // offset: {lat, lon} in whole degrees, added to every station's GPS position.
-    function modelToGTFSFiles(model, agency, offset, fallbackCalendars) {
-        const off = offset ?? { lat: 0, lon: 0 };
-
+    function modelToGTFSFiles(model, agency, fallbackCalendars) {
         const stops = model.stations.map(s => ({
             id: "S" + s.id,
             name: s.name,
-            lat: s.lat + off.lat,
-            lon: s.lon + off.lon
+            lat: s.lat,
+            lon: s.lon
         }));
 
         const routes = model.lines.map(l => ({
@@ -120,38 +117,14 @@
         ];
     }
 
-    // Picks random whole-degree offsets (anti-plagiarism) that keep every
-    // station of both models on valid, non-wrapping coordinates.
-    function pickOffsets(tc, rng) {
-        const rand = rng ?? Math.random;
-        const stations = [
-            ...tc.arrange.stations,
-            ...(tc.expected.type === "model" ? tc.expected.model.stations : [])
-        ];
-        let minLat = 0, maxLat = 0, minLon = 0, maxLon = 0;
-        for (const s of stations) {
-            minLat = Math.min(minLat, s.lat); maxLat = Math.max(maxLat, s.lat);
-            minLon = Math.min(minLon, s.lon); maxLon = Math.max(maxLon, s.lon);
-        }
-        // keep results within lat ±80 and lon ±179
-        const latLo = Math.max(-60, Math.ceil(-80 - minLat));
-        const latHi = Math.min(60, Math.floor(80 - maxLat));
-        const lonLo = Math.max(-150, Math.ceil(-179 - minLon));
-        const lonHi = Math.min(150, Math.floor(179 - maxLon));
-        const pick = (lo, hi) => lo > hi ? 0 : lo + Math.floor(rand() * (hi - lo + 1));
-        return { lat: pick(latLo, latHi), lon: pick(lonLo, lonHi) };
-    }
-
     // Builds the four submission files. Returns [{name, data: string|Uint8Array}].
-    function buildTestFiles(tc, offset) {
-        const off = tc.randomizeOffsets ? (offset ?? pickOffsets(tc)) : { lat: 0, lon: 0 };
-
+    function buildTestFiles(tc) {
         const files = [
             { name: "comment.txt", data: tc.description + "\n" },
             { name: "act.txt", data: tc.act + "\n" },
             {
                 name: "arrange.zip",
-                data: zip.create(modelToGTFSFiles(tc.arrange, tc.agency, off))
+                data: zip.create(modelToGTFSFiles(tc.arrange, tc.agency))
             }
         ];
 
@@ -160,7 +133,7 @@
         } else {
             files.push({
                 name: "assert.zip",
-                data: zip.create(modelToGTFSFiles(tc.expected.model, tc.agency, off, tc.arrange.calendars))
+                data: zip.create(modelToGTFSFiles(tc.expected.model, tc.agency, tc.arrange.calendars))
             });
         }
         return files;
@@ -292,5 +265,5 @@
         return { model, agency };
     }
 
-    G.gtfs = { modelToGTFSFiles, pickOffsets, buildTestFiles, importGTFS, DAYS };
+    G.gtfs = { modelToGTFSFiles, buildTestFiles, importGTFS, DAYS };
 })();

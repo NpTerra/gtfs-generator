@@ -93,15 +93,7 @@
                 value: tc.description, rows: 3,
                 oninput: (e) => { tc.description = e.target.value; app.touch(); }
             }), t("hint.description")),
-            field("Act (act.txt)", actEditor(app), t("hint.act")),
-            h("label", { class: "row", style: "cursor:pointer" },
-                h("input", {
-                    type: "checkbox", checked: tc.randomizeOffsets, style: "width:auto",
-                    onchange: (e) => { tc.randomizeOffsets = e.target.checked; app.touch(); }
-                }),
-                h("span", null, "Randomize GPS offsets on generate"),
-            ),
-            h("div", { class: "hint" }, t("hint.randomize"))
+            field("Act (act.txt)", actEditor(app), t("hint.act"))
         );
     }
 

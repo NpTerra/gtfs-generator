@@ -3,7 +3,6 @@
   "name": "example1_closeAreaOneEnd",
   "description": "Szintetikus tanulópélda: építsd át sajátra beadás előtt!\nA lezárt területbe a vonal egyik vége esik, és az érintett megállók a vonalon egymás után következnek.\nAzt várjuk, hogy a vonal megmarad, de az érintett megállók lekerülnek róla, és törlődnek a modellből is, mert nem marad vonaluk.",
   "act": "CLOSE_AREA\nPort;25",
-  "randomizeOffsets": true,
   "agency": {
     "name": "Your Transit Agency",
     "url": "http://www.yourtransitagency.com",
@@ -111,6 +110,7 @@
   },
   "expected": {
     "type": "model",
+    "exception": "INVALID_ARGUMENT",
     "model": {
       "stations": [
         {

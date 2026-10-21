@@ -292,7 +292,6 @@
                 tc.name = file.name.replace(/\.zip$/i, "");
                 tc.description = text("comment.txt");
                 tc.act = text("act.txt");
-                tc.randomizeOffsets = false;
                 tc.arrange = M.emptyModel();
                 tc.expected = { type: "model", exception: "INVALID_ARGUMENT", model: M.emptyModel() };
 
@@ -348,7 +347,7 @@
     //      -m http.server, Caddy browse, ...), JSON or HTML
     //   2) an optional examples/index.json manifest, for servers that
     //      cannot list directories
-    // Over file:// neither is possible; the dropdown shows a hint instead.
+    // Over file:// neither is possible; the File menu shows a hint instead.
 
     function cleanExampleNames(names) {
         const files = (Array.isArray(names) ? names : [])
@@ -458,18 +457,10 @@
         }
 
         try {
-            const offset = tc.randomizeOffsets ? G.gtfs.pickOffsets(tc) : { lat: 0, lon: 0 };
-            const files = G.gtfs.buildTestFiles(tc, offset);
+            const files = G.gtfs.buildTestFiles(tc);
             const outer = G.zip.create(files);
             download(tc.name + ".zip", outer, "application/zip");
-
-            let msg = t("toast.generated", { name: tc.name });
-            if (tc.randomizeOffsets)
-                msg += "\n" + t("toast.offset", {
-                    lat: (offset.lat >= 0 ? "+" : "") + offset.lat,
-                    lon: (offset.lon >= 0 ? "+" : "") + offset.lon
-                });
-            toast(msg);
+            toast(t("toast.generated", { name: tc.name }));
         } catch (err) {
             console.error(err);
             toast(t("toast.generateFailed", { msg: err.message }), true);
@@ -579,9 +570,10 @@
         document.getElementById("btn-redo").addEventListener("click", redo);
         document.getElementById("btn-pick-done").addEventListener("click", () => app.setPickLine(null));
 
-        // shortcuts; inside form fields the browser's own text undo etc. win
+        // shortcuts; while typing, the browser's own text undo etc. win (selects,
+        // checkboxes and radios have no undo of their own, so ours applies there)
         document.addEventListener("keydown", (ev) => {
-            if (ev.target.closest?.("input, textarea, select")) return;
+            if (ev.target.closest?.("textarea, input:not([type=checkbox], [type=radio], [type=color], [type=range], [type=button], [type=submit], [type=reset])")) return;
             const key = ev.key.toLowerCase();
             if ((ev.ctrlKey || ev.metaKey) && (key === "z" || key === "y")) {
                 ev.preventDefault();
@@ -597,7 +589,7 @@
             }
         });
 
-        // restore autosaved work, otherwise start with the default example
+        // restore autosaved work, otherwise start with the default test case
         let tc = null;
         try {
             const saved = localStorage.getItem(AUTOSAVE_KEY);

@@ -1,5 +1,8 @@
 // Test suite for the web editor (run with: node tools/check.js):
 //
+// 0) Every web/js file must parse, and the model/act helpers the editor
+//    relies on get a few unit checks.
+//
 // 1) Validates every "Load example" entry in web/examples/*.json: it must
 //    parse, pass validation without errors, generate cleanly, and survive a
 //    JSON round trip. If an optional examples/index.json manifest exists, it
@@ -55,10 +58,9 @@ function checkExamples() {
     if (files.length === 0) {
         console.log("FAIL: no web/examples/*.json found");
         failures++;
-        return [];
+        return;
     }
 
-    const examples = [];
     for (const file of files) {
         const problems = [];
         try {
@@ -68,14 +70,13 @@ function checkExamples() {
             for (const p of M.validate(tc).filter(p => p.level === "error"))
                 problems.push("validation error: " + p.text);
 
-            const generated = gtfs.buildTestFiles(tc, { lat: 0, lon: 0 });
+            const generated = gtfs.buildTestFiles(tc);
             if (!generated.some(f => f.name === "arrange.zip"))
                 problems.push("no arrange.zip generated");
 
             if (M.toJSON(M.fromJSON(M.toJSON(tc))) !== M.toJSON(tc))
                 problems.push("JSON round trip not stable");
 
-            if (problems.length === 0) examples.push(JSON.parse(M.toJSON(tc)));
         } catch (err) {
             problems.push("exception: " + err.message);
         }
@@ -105,7 +106,6 @@ function checkExamples() {
     }
 
     console.log("");
-    return examples;
 }
 
 // ---- 2) round-trip regression against real submissions (local only) -------
@@ -141,7 +141,6 @@ async function roundTripSubmittedTests() {
             name: dir,
             description: readTxt("comment.txt") ?? "",
             act: readTxt("act.txt") ?? "",
-            randomizeOffsets: false,
             agency: agency ?? { name: "", url: "", timezone: "", language: "", phone: "" },
             arrange: arrangeModel,
             expected: { type: "model", exception: "INVALID_ARGUMENT", model: M.emptyModel() }
@@ -161,7 +160,7 @@ async function roundTripSubmittedTests() {
         const tc2 = M.fromJSON(M.toJSON(tc));
 
         // regenerate and compare
-        const generated = gtfs.buildTestFiles(tc2, { lat: 0, lon: 0 });
+        const generated = gtfs.buildTestFiles(tc2);
         const genMap = Object.fromEntries(generated.map(f => [f.name, f.data]));
 
         if (genMap["comment.txt"] !== tc.description + "\n") problems.push("comment.txt mismatch");
@@ -193,19 +192,14 @@ async function roundTripSubmittedTests() {
     }
 }
 
-// ---- offset sanity check on the first example ------------------------------
+// ---- every script parses (the UI files are not run here) ------------------
 
-async function checkOffsets(examples) {
-    if (examples.length === 0) return;
-    const tc = M.fromJSON(JSON.stringify(examples[0]));
-    tc.randomizeOffsets = true;
-    const off = gtfs.pickOffsets(tc, () => 0.99);
-    const files = gtfs.buildTestFiles(tc, off);
-    const arr = await zip.read(files.find(f => f.name === "arrange.zip").data);
-    const stops = parseTable(arr, "stops.txt");
-    const bad = stops.filter(s => Math.abs(+s.stop_lat) > 85 || Math.abs(+s.stop_lon) > 180);
-    if (bad.length) { failures++; console.log("FAIL offsets: out-of-range coords", bad); }
-    else console.log(`ok   offsets (lat ${off.lat}, lon ${off.lon})`);
+function checkSyntax() {
+    const dir = path.join(WEB, "js");
+    for (const f of fs.readdirSync(dir).filter(f => f.endsWith(".js"))) {
+        try { new Function(fs.readFileSync(path.join(dir, f), "utf8")); }
+        catch (err) { failures++; console.log(`FAIL ${f} does not parse: ${err.message}`); }
+    }
 }
 
 // ---- model helpers used by the editor ----------------------------------------
@@ -232,6 +226,21 @@ function checkModelHelpers() {
     expect(warnings.some(w => w.includes("v.dupStationName") || w.includes('named "A"')), "duplicate station names warn");
     expect(warnings.some(w => w.includes("v.calendarOrder") || w.includes("ends before")), "reversed calendar warns");
 
+    // the inactive expected result survives a JSON round trip (undo restores from JSON)
+    const both = M.defaultTestCase();
+    both.expected.type = "exception";
+    both.expected.exception = "RADIUS_TOO_SMALL";
+    both.expected.model = M.fromJSON(M.toJSON(both)).arrange;
+    const back = M.fromJSON(M.toJSON(both));
+    expect(back.expected.model.stations.length === both.arrange.stations.length && back.expected.exception === "RADIUS_TOO_SMALL",
+        "toJSON keeps both the expected model and the exception");
+
+    // a position that can't be converted leaves the station untouched
+    const st = M.makeStation(1, "A", 10, 20);
+    const before = JSON.stringify(st);
+    try { M.setStationGPS(st, 90, 0); } catch { /* expected */ }
+    expect(JSON.stringify(st) === before, "setStationGPS at a pole changes nothing");
+
     const files = {
         "calendar.txt": new TextEncoder().encode("service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nC1,1,1,1,1,1,1,1,20250101,20251231\n"),
         "trips.txt": new TextEncoder().encode("route_id,service_id,trip_id\nR1,weekday,T1\n")
@@ -244,6 +253,9 @@ function checkModelHelpers() {
     expect(A.join({ ...act, params: ["", "10"] }) === "DIVERT_LINE\n;10", "empty field keeps its place");
     expect(A.join({ method: "CLOSE_AREA", params: ["A", ""], rest: [] }) === "CLOSE_AREA\nA", "trailing empties dropped");
     expect(A.join(A.split("CLOSE_AREA\nA;10\nL1;L2")) === "CLOSE_AREA\nA;10\nL1;L2", "extra lines survive");
+    expect(A.join(A.split("\nCLOSE_AREA\n\nA;10\n")) === "CLOSE_AREA\nA;10", "blank lines are skipped");
+    const noParams = A.join({ method: "CLOSE_AREA", params: ["", ""], rest: ["L1"] });
+    expect(A.join(A.split(noParams)) === noParams && A.split(noParams).rest[0] === "L1", "empty params before more lines keep their line");
     const actKeys = (act) => A.check(act, M.defaultTestCase().arrange).map(p => p.key).join(",");
     expect(actKeys("CLOSE_AREA\nA;10") === "", "valid act has no warnings");
     expect(actKeys("CLOSE_AREA\nX;ten") === "v.actNoStation,v.actNotNumber", "bad station + radius warn");
@@ -260,9 +272,9 @@ function checkModelHelpers() {
 
 async function run() {
     checkModelHelpers();
-    const examples = checkExamples();
+    checkSyntax();
+    checkExamples();
     await roundTripSubmittedTests();
-    await checkOffsets(examples);
 
     if (failures > 0) { console.log(`\n${failures} FAILURES`); process.exit(1); }
     console.log("\nall checks passed");
