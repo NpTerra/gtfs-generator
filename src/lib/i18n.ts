@@ -10,13 +10,14 @@ const STRINGS: Record<Lang, Record<string, string>> = {
   en: {
     "hint.testName": "Also the name of the generated .zip file.",
     "hint.description": "Explain what the test verifies. This is what the graders read.",
-    "hint.act": "Pick the method and fill in its fields, or edit act.txt directly (line 1: method, " +
-      "line 2: parameters separated by ';'). The affected area is drawn on the map.",
+    "hint.act": "Pick a method (type to search) and fill in its fields, or edit act.txt in the box below. " +
+      "The map shows what the act refers to. Custom… takes any method name; " +
+      "one the editor doesn't know isn't checked or shown on the map.",
     "hint.phone": "Set this to the phone number YOU were assigned for the course!",
     "hint.calendarsInherit": "Empty: the Arrange calendars will be reused in assert.zip.",
     "hint.trips": "Each line needs at least one trip, otherwise it gets no stop times.",
     "hint.noStops": "No stops yet, add at least two.",
-    "hint.exception": "The single line written to assert.txt.",
+    "hint.exception": "The single line written to assert.txt. Custom… takes any name.",
     "pill.expected": "The faded drawing on the map is the Arrange model, for comparison.",
 
     "map.hint": "Drag stations to move them · double-click to add a station · scroll to zoom",
@@ -78,13 +79,14 @@ const STRINGS: Record<Lang, Record<string, string>> = {
   hu: {
     "hint.testName": "Egyben a generált .zip fájl neve is.",
     "hint.description": "Írd le, mit ellenőriz a teszt. Ezt olvassák a javítók.",
-    "hint.act": "Válaszd ki a metódust és töltsd ki a mezőit, vagy szerkeszd közvetlenül az act.txt-t " +
-      "(1. sor: metódus, 2. sor: paraméterek ';'-vel elválasztva). Az érintett terület kirajzolódik a térképen.",
+    "hint.act": "Válassz metódust (gépeléssel kereshetsz) és töltsd ki a mezőit, vagy írd át az act.txt-t az alsó mezőben. " +
+      "A térkép mutatja, amire az act hivatkozik. A Custom… bármilyen metódusnevet elfogad; " +
+      "amit a szerkesztő nem ismer, azt nem ellenőrzi, és a térképen sem jelenik meg.",
     "hint.phone": "Írd át arra a telefonszámra, amit a tárgyból kaptál!",
     "hint.calendarsInherit": "Üres: az Arrange naptárai lesznek felhasználva az assert.zip-ben.",
     "hint.trips": "Minden vonalhoz kell legalább egy menet (trip), különben nem generálódnak hozzá megállási idők.",
     "hint.noStops": "Még nincs megálló, vegyél fel legalább kettőt.",
-    "hint.exception": "Ez az egyetlen sor kerül az assert.txt-be.",
+    "hint.exception": "Ez az egyetlen sor kerül az assert.txt-be. A Custom… bármilyen nevet elfogad.",
     "pill.expected": "A térképen halványan az Arrange modell látszik, összehasonlításként.",
 
     "map.hint": "Az állomások húzással mozgathatók · dupla kattintás: új állomás · görgetés: nagyítás",

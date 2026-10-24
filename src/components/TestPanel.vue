@@ -5,6 +5,7 @@ import ActEditor from '@/components/ActEditor.vue'
 import FormField from '@/components/FormField.vue'
 import PanelHeader from '@/components/PanelHeader.vue'
 import PanelSection from '@/components/PanelSection.vue'
+import PresetSelect from '@/components/PresetSelect.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -49,8 +50,7 @@ async function copyArrange() {
           </div>
         </RadioGroup>
         <FormField v-if="tc.expected.type === 'exception'" label="Exception name" :hint="t('hint.exception')">
-          <Input v-model="tc.expected.exception" class="font-mono" list="known-exceptions" />
-          <datalist id="known-exceptions"><option v-for="x in KNOWN_EXCEPTIONS" :key="x" :value="x" /></datalist>
+          <PresetSelect v-model="tc.expected.exception" :options="KNOWN_EXCEPTIONS" title="Exception name (assert.txt)" />
         </FormField>
         <div v-else class="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" title="Overwrite the Expected model with a copy of the Arrange model" @click="copyArrange">

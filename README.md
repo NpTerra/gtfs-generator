@@ -12,7 +12,7 @@ Open the editor in your browser at the hosted instance your instructor/maintaine
 
 - **IDE-style layout**, modeled on IntelliJ IDEA: the Test case panel on the left, the Arrange/Expected model on the right, Problems under the map. Drag the gaps to resize, hide a panel with its − button and bring it back from the stripe on the screen edge (Test case, Model) or from the bar under the map or the problems counter in the status bar (Problems); your layout is remembered. Light, dark or system theme. On phones the map stays pinned on top and the panels scroll below it.
 - **Visual map** of your test network: lines are drawn in their colors, stations are draggable, double-click adds a station, scroll zooms.
-- **Act preview**: a `CLOSE_AREA` radius is drawn as a dashed circle on the map, and the stations/line of a `DIVERT_LINE` call are highlighted, so you can *see* what your test affects.
+- **Act preview**: a `CLOSE_AREA` radius is drawn as a dashed circle on the map, and the stations/line of a `DIVERT_LINE` call are highlighted, so you can *see* what your test affects. The method and exception pickers have a search box, and *Custom…* takes any name; a method the editor doesn't know gets no checks or map drawing.
 - **Panel editors**: the Test case panel holds the name, description, act, expected result and agency; the model panel holds stations, lines (with ordered stops), calendars and trips.
 - **GPS ⇄ XY toggle per station**: place stations in meters on a grid (easy) or in real GPS coordinates; conversion matches the Java generator exactly.
 - **Arrange / Expected tabs**: edit the before-model and the after-model separately, or pick an expected **exception** instead. "Copy Arrange → Expected" saves you from re-entering everything.

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // Method picker + one field per parameter, all computed from tc.act, so the
 // form and the raw act.txt textarea can never disagree.
-import { computed } from 'vue'
-import { NativeSelect } from '@/components/ui/native-select'
+import { computed, nextTick, useTemplateRef } from 'vue'
+import PresetSelect from '@/components/PresetSelect.vue'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { tc } from '@/composables/useEditor'
@@ -24,6 +24,10 @@ function setParam(index: number, repeat: boolean | undefined, value: string) {
   tc.value.act = join({ ...now, params: params.map(s => s.trim()) })
 }
 
+// after Custom…: type the rest of the act right away
+const actText = useTemplateRef<{ $el: HTMLTextAreaElement }>('actText')
+const focusAct = () => nextTick(() => actText.value?.$el.focus())
+
 const unique = (values: string[]) => [...new Set(values.filter(Boolean))]
 const stationNames = computed(() => unique(tc.value.arrange.stations.map(s => s.name)))
 const lineNames = computed(() => unique(tc.value.arrange.lines.flatMap(l => [l.shortName, l.name])))
@@ -31,12 +35,7 @@ const lineNames = computed(() => unique(tc.value.arrange.lines.flatMap(l => [l.s
 
 <template>
   <div class="flex flex-col gap-2">
-    <NativeSelect v-model="method" class="w-full font-mono" title="Method (first line of act.txt)">
-      <option v-if="!known.includes(method)" :value="method">
-        {{ act.method ? `${act.method} (custom)` : 'choose a method…' }}
-      </option>
-      <option v-for="m in known" :key="m" :value="m">{{ m }}</option>
-    </NativeSelect>
+    <PresetSelect v-model="method" :options="known" no-input title="Method (first line of act.txt)" @custom="focusAct" />
 
     <div v-if="fields(act).length" class="flex flex-wrap gap-2">
       <label
@@ -55,7 +54,7 @@ const lineNames = computed(() => unique(tc.value.arrange.lines.flatMap(l => [l.s
       </label>
     </div>
 
-    <Textarea v-model="tc.act" class="min-h-16 font-mono" rows="2" title="Raw act.txt" />
+    <Textarea ref="actText" v-model="tc.act" class="min-h-16 font-mono" rows="2" title="Raw act.txt" :placeholder="'METHOD_NAME\nparam1;param2'" />
 
     <datalist id="act-stations"><option v-for="n in stationNames" :key="n" :value="n" /></datalist>
     <datalist id="act-lines"><option v-for="n in lineNames" :key="n" :value="n" /></datalist>
