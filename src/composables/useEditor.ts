@@ -44,7 +44,7 @@ const dirty = computed(() => JSON.stringify(tc.value) !== history.last.value.sna
 let saveFailed = false
 function persist() {
   if (!activeId.value) return
-  const ok = storage.writeFile(activeProject.value, activeId.value, M.toJSON(tc.value))
+  const ok = storage.writeFile(activeProject.value, activeId.value, M.toJSON(tc.value, 0))
   // deferred: the first save runs before the toaster is mounted
   if (!ok && !saveFailed) setTimeout(() => toast.error(t('toast.saveFailed'), { duration: Infinity, closeButton: true }))
   saveFailed = !ok
@@ -128,8 +128,19 @@ export function reloadTestCase(next: TestCase) {
   history.commit()
 }
 
+// false (with a toast) when a list already holds as many as the editor handles
+export function hasRoom(n: number, what: M.CountLimit | 'stopsPerLine'): boolean {
+  if (n < M.LIMITS[what]) return true
+  toast.error(t('toast.limitReached', { max: M.LIMITS[what], what: t('count.' + what) }))
+  return false
+}
+
+export const hasRoomForStop = (model: Model, line: Line) =>
+  hasRoom(line.stops.length, 'stopsPerLine') && hasRoom(M.stopCount(model), 'stops')
+
 export function addStation(x: number, y: number) {
   const model = editableModel.value
+  if (!hasRoom(model.stations.length, 'stations')) return
   const id = M.nextId(model.stations)
   model.stations.push(M.makeStation(id, M.nextStationName(model.stations), x, y))
   selection.value = id
@@ -137,8 +148,8 @@ export function addStation(x: number, y: number) {
 
 // a map click: either appends a stop (pick mode) or selects the station
 export function clickStation(id: number) {
-  if (pickLine.value) M.appendStop(pickLine.value, id)
-  else selection.value = id
+  if (!pickLine.value) selection.value = id
+  else if (hasRoomForStop(editableModel.value, pickLine.value)) M.appendStop(pickLine.value, id)
 }
 
 export async function deleteStation(model: Model, station: Station) {
@@ -205,11 +216,13 @@ export function changeCalendarId(model: Model, calendar: Calendar, newId: number
 }
 
 export function addLine(model: Model) {
+  if (!hasRoom(model.lines.length, 'lines')) return
   const id = M.nextId(model.lines)
   model.lines.push({ id, name: 'L' + id, shortName: 'L' + id, color: M.LINE_COLORS[(id - 1) % M.LINE_COLORS.length], type: 1, stops: [] })
 }
 
 export function addCalendar(model: Model) {
+  if (!hasRoom(model.calendars.length, 'calendars')) return
   model.calendars.push({ id: M.nextId(model.calendars), start: '2025-01-01', end: '2025-12-31', availability: [1, 1, 1, 1, 1, 1, 1] })
 }
 
@@ -219,6 +232,7 @@ export function calendarsFor(model: Model): Calendar[] {
 }
 
 export function addTrip(model: Model) {
+  if (!hasRoom(model.trips.length, 'trips')) return
   const trip: Trip = { id: M.nextId(model.trips), line: model.lines[0]?.id ?? 1, service: calendarsFor(model)[0]?.id ?? 1 }
   model.trips.push(trip)
 }

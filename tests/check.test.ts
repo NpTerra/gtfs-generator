@@ -79,6 +79,37 @@ it('model helpers', () => {
   expect(gtfs.importGTFS(files).model.trips[0].service).toBe(1) // unparsable service_id falls back to 1
 })
 
+it('limits: oversized test cases get warnings (only an overlong name is an error)', () => {
+  const of = (tc: M.TestCase, level: string) => M.validate(tc).filter(p => p.level === level).map(p => p.text).join('\n')
+  expect(of(M.defaultTestCase(), 'error')).toBe('')
+  const big = M.defaultTestCase()
+  big.arrange.stations = Array.from({ length: M.LIMITS.stations + 1 }, (_, i) => M.makeStation(i + 1, 'S' + i, i, 0))
+  big.description = 'x'.repeat(M.LIMITS.description + 1)
+  big.arrange.lines[0].name = 'n'.repeat(M.LIMITS.text + 1)
+  expect(of(big, 'error')).toBe('') // the editor's limits, not the homework's: nothing blocks Generate
+  const text = of(big, 'warning')
+  expect(text).toContain(`${M.LIMITS.stations + 1} stations`)
+  expect(text).toContain('comment.txt is')
+  expect(text).toContain('1 station or line name(s) longer')
+  big.name = 'a'.repeat(M.LIMITS.name + 1)
+  expect(of(big, 'error')).toContain('Name is')
+  // a field that came in longer than its limit has no maxlength, so it stays editable
+  expect(M.room(M.LIMITS.text, 'short')).toBe(M.LIMITS.text)
+  expect(M.room(M.LIMITS.description, big.description)).toBeUndefined()
+  expect(M.countsOverLimit(big.arrange)).toEqual([{ what: 'stations', n: M.LIMITS.stations + 1, max: M.LIMITS.stations }])
+
+  // stops count per line and for all lines together
+  const stops = M.defaultTestCase().arrange
+  const stop = { stationId: 1, arrival: '08:00:00', departure: '08:00:00' }
+  stops.lines = Array.from({ length: 5 }, (_, i) => ({ ...stops.lines[0], id: i + 1, stops: Array(M.LIMITS.stops / 5 + 1).fill(stop) }))
+  expect(M.countsOverLimit(stops).map(o => o.what)).toEqual(['stops'])
+
+  // browser storage holds compact JSON; files people read stay indented
+  const tc = M.defaultTestCase()
+  expect(M.toJSON(tc, 0)).not.toContain('\n')
+  expect(M.fromJSON(M.toJSON(tc, 0))).toEqual(M.fromJSON(M.toJSON(tc)))
+})
+
 it('act.txt split/join keeps field positions', () => {
   const act = acts.split('DIVERT_LINE\nZ2;Walk;Tower;Campus')
   expect(acts.fields(act)[1].values.join(';')).toBe('Walk;Tower;Campus') // the repeat param takes the rest

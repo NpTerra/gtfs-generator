@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { tc } from '@/composables/useEditor'
 import { fields, join, METHODS, split } from '@/lib/acts'
+import { LIMITS, room } from '@/lib/model'
 
 const act = computed(() => split(tc.value.act))
 const known = Object.keys(METHODS)
@@ -54,7 +55,7 @@ const lineNames = computed(() => unique(tc.value.arrange.lines.flatMap(l => [l.s
       </label>
     </div>
 
-    <Textarea ref="actText" v-model="tc.act" class="min-h-16 font-mono" rows="2" title="Raw act.txt" :placeholder="'METHOD_NAME\nparam1;param2'" />
+    <Textarea ref="actText" v-model="tc.act" :maxlength="room(LIMITS.act, tc.act)" class="min-h-16 font-mono" rows="2" title="Raw act.txt" :placeholder="'METHOD_NAME\nparam1;param2'" />
 
     <datalist id="act-stations"><option v-for="n in stationNames" :key="n" :value="n" /></datalist>
     <datalist id="act-lines"><option v-for="n in lineNames" :key="n" :value="n" /></datalist>

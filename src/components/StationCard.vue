@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { changeStationId, deleteStation, selection } from '@/composables/useEditor'
 import type { CoordMode, Model, Station } from '@/lib/model'
-import { round6, setStationGPS, setStationXY } from '@/lib/model'
+import { LIMITS, room, round6, setStationGPS, setStationXY } from '@/lib/model'
 
 const props = defineProps<{ station: Station; model: Model }>()
 const isGPS = computed(() => props.station.coordMode === 'gps')
@@ -39,7 +39,7 @@ function setCoord(index: number, raw: string) {
     @click="selection = station.id"
   >
     <div class="flex items-center gap-1.5">
-      <Input v-model="station.name" placeholder="Name" aria-label="Station name" class="min-w-0 flex-1 font-semibold" />
+      <Input v-model="station.name" :maxlength="room(LIMITS.text, station.name)" placeholder="Name" aria-label="Station name" class="min-w-0 flex-1 font-semibold" />
       <IdInput :id="station.id" prefix="S" label="Station ID" :on-change-id="id => changeStationId(model, station, id)" />
       <Button variant="ghost" size="icon-sm" class="text-muted-foreground hover:text-destructive" title="Delete station" aria-label="Delete station" @click.stop="deleteStation(model, station)">
         <XIcon />

@@ -160,7 +160,8 @@ export function isValidDate(value: unknown): boolean {
 
 // ---- JSON import/export -----------------------------------------------------------------
 
-export function toJSON(tc: TestCase): string {
+// indented for files people read (Export, examples); compact (0) for browser storage
+export function toJSON(tc: TestCase, indent = 2): string {
   const mapStation = (s: Station) => s.coordMode === 'gps'
     ? { id: s.id, name: s.name, coordMode: s.coordMode, lat: s.lat, lon: s.lon }
     : { id: s.id, name: s.name, coordMode: s.coordMode, x: s.x, y: s.y }
@@ -183,7 +184,7 @@ export function toJSON(tc: TestCase): string {
     arrange: mapModel(tc.arrange),
     // both, so switching the type back (or reloading) keeps the other one
     expected: { type: tc.expected.type, exception: tc.expected.exception, model: mapModel(tc.expected.model) },
-  }, null, 2)
+  }, null, indent)
 }
 
 const num = (v: unknown, fallback: number) => {
@@ -266,11 +267,54 @@ export function fromJSON(text: string): TestCase {
 
 // ---- validation ---------------------------------------------------------------------------
 
+// Upper bounds the editor is built for: far beyond any hand-made test, so
+// only big GTFS imports or foreign files get near them. They keep the map
+// fast, a project within the browser's storage and share links shareable.
+export const LIMITS = {
+  name: 100, // the test name, also the zip and folder name
+  description: 5000,
+  act: 5000,
+  exception: 100,
+  text: 200, // station and line names, agency fields
+  stations: 1000,
+  lines: 200,
+  stopsPerLine: 500,
+  stops: 2000, // all lines of a model together: stops make up most of a test case's size
+  calendars: 100,
+  trips: 1000,
+} as const
+
+// A text field's maxlength: the limit, or none while text an import brought in is longer
+// (a warning says so). With the limit as maxlength, such text could only be deleted from,
+// never retyped; once it's trimmed under, the limit holds again
+export const room = (max: number, value: string | null | undefined) => (value?.length ?? 0) > max ? undefined : max
+
+export type CountLimit = 'stations' | 'lines' | 'calendars' | 'trips' | 'stops'
+
+export const stopCount = (model: Model) => model.lines.reduce((n, l) => n + l.stops.length, 0)
+
+// the model's counts above LIMITS (a line's stops included), for validation and imports
+export function countsOverLimit(model: Model): { what: CountLimit | 'stopsPerLine'; n: number; max: number }[] {
+  const out: ReturnType<typeof countsOverLimit> = (['stations', 'lines', 'calendars', 'trips'] as const)
+    .filter(what => model[what].length > LIMITS[what])
+    .map(what => ({ what, n: model[what].length, max: LIMITS[what] }))
+  if (stopCount(model) > LIMITS.stops) out.push({ what: 'stops', n: stopCount(model), max: LIMITS.stops })
+  const longest = Math.max(0, ...model.lines.map(l => l.stops.length))
+  if (longest > LIMITS.stopsPerLine) out.push({ what: 'stopsPerLine', n: longest, max: LIMITS.stopsPerLine })
+  return out
+}
+
 export function isPhoneMissing(agency: Agency | undefined): boolean {
   return !agency?.phone?.trim() || /123-456-7890/.test(agency.phone)
 }
 
 function validateModel(model: Model, label: string, problems: Problem[]) {
+  for (const { what, n, max } of countsOverLimit(model))
+    problems.push({ level: 'warning', text: t('v.tooMany', { label, what: t('count.' + what), n, max }) })
+  const longNames = [...model.stations.map(s => s.name), ...model.lines.flatMap(l => [l.name, l.shortName])]
+    .filter(name => String(name).length > LIMITS.text).length
+  if (longNames) problems.push({ level: 'warning', text: t('v.longNames', { label, n: longNames, max: LIMITS.text }) })
+
   const stationIds = new Set<number>()
   const nameCounts = new Map<string, number>()
   for (const s of model.stations) {
@@ -345,6 +389,14 @@ export function validate(tc: TestCase): Problem[] {
   const problems: Problem[] = []
 
   if (isBadName(tc.name)) problems.push({ level: 'error', text: t('v.badName') })
+  const lengths: [string, string, number][] = [
+    ['Name', tc.name, LIMITS.name], ['comment.txt', tc.description, LIMITS.description], ['act.txt', tc.act, LIMITS.act],
+    ...Object.entries(tc.agency).map(([k, v]): [string, string, number] => ['Agency ' + k, v, LIMITS.text]),
+  ]
+  if (tc.expected.type === 'exception') lengths.push(['assert.txt', tc.expected.exception, LIMITS.exception])
+  // the editor's own limits, not the homework's: hints, except the name, which names the zip and folder
+  for (const [field, value, max] of lengths)
+    if (String(value ?? '').length > max) problems.push({ level: field === 'Name' ? 'error' : 'warning', text: t('v.tooLong', { field, n: String(value).length, max }) })
   if (!tc.description?.trim()) problems.push({ level: 'warning', text: t('v.noDescription') })
   if (!tc.act?.trim()) problems.push({ level: 'error', text: t('v.noAct') })
   for (const p of checkAct(tc.act, tc.arrange)) problems.push({ level: 'warning', text: t(p.key, p.params) })

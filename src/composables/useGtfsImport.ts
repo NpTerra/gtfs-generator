@@ -59,10 +59,16 @@ export async function applyGtfsImport() {
   try {
     await new Promise(r => setTimeout(r, 30)) // let the toast paint: big feeds take a few seconds
     const model = feed.build([...selected], oneTripPerLine)
+    const over = M.countsOverLimit(model)
+    if (over.length) {
+      const details = over.map(o => `${o.n} ${t('count.' + o.what)} (max ${o.max})`).join(', ')
+      return void toast.error(t('toast.importTooBig', { details }), { id: building })
+    }
     if (target === 'new') {
       const next = M.defaultTestCase()
-      const name = gtfsImport.fileName.replace(/\.zip$/i, '').replace(/[^A-Za-z0-9_\-. ]/g, '_')
-      next.name = M.isBadName(name) ? 'imported_routes' : name
+      // "budapest_gtfs (1).zip" (a second download of the same file) -> budapest_gtfs
+      const name = gtfsImport.fileName.replace(/\.zip$/i, '').replace(/ \(\d+\)$/, '').replace(/[^A-Za-z0-9_\-. ]+/g, '_')
+      next.name = M.isBadName(name) ? 'imported_routes' : name // addFile cuts it to the name limit
       next.arrange = model
       next.expected.model = M.cloneModel(model)
       addFile(next)

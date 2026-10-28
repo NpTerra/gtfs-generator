@@ -5,10 +5,10 @@ import IdInput from '@/components/IdInput.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
-import { changeLineId, deleteLine, pickLineId } from '@/composables/useEditor'
+import { changeLineId, deleteLine, hasRoomForStop, pickLineId } from '@/composables/useEditor'
 import { t } from '@/lib/i18n'
 import type { Line, Model } from '@/lib/model'
-import { appendStop } from '@/lib/model'
+import { appendStop, LIMITS, room } from '@/lib/model'
 import { inkFor } from '@/lib/utils'
 
 const props = defineProps<{ line: Line; model: Model }>()
@@ -29,6 +29,7 @@ function move(i: number, delta: number) {
 }
 
 function addStop() {
+  if (!hasRoomForStop(props.model, props.line)) return
   const used = new Set(props.line.stops.map(s => s.stationId))
   const next = props.model.stations.find(s => !used.has(s.id)) ?? props.model.stations[0]
   appendStop(props.line, next.id)
@@ -48,8 +49,8 @@ function addStop() {
           @input="e => line.color = (e.target as HTMLInputElement).value.toUpperCase()"
         >
       </label>
-      <Input v-model="line.shortName" class="w-16 shrink-0" placeholder="Short" aria-label="Short name" title="Short name (route_short_name)" />
-      <Input v-model="line.name" class="min-w-0 flex-1" placeholder="Long name" aria-label="Long name" title="Long name (route_long_name)" />
+      <Input v-model="line.shortName" :maxlength="room(LIMITS.text, line.shortName)" class="w-16 shrink-0" placeholder="Short" aria-label="Short name" title="Short name (route_short_name)" />
+      <Input v-model="line.name" :maxlength="room(LIMITS.text, line.name)" class="min-w-0 flex-1" placeholder="Long name" aria-label="Long name" title="Long name (route_long_name)" />
       <Button variant="ghost" size="icon-sm" class="text-muted-foreground hover:text-destructive" title="Delete line" aria-label="Delete line" @click="deleteLine(model, line)">
         <XIcon />
       </Button>

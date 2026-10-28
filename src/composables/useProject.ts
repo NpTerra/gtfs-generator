@@ -46,7 +46,7 @@ function createProject(name: string, id = storage.newId()): string {
 
 function seedExamples() {
   createProject('Example Models', EXAMPLES)
-  for (const example of exampleTestCases()) storage.writeFile(EXAMPLES, storage.newId(), M.toJSON(example))
+  for (const example of exampleTestCases()) storage.writeFile(EXAMPLES, storage.newId(), M.toJSON(example, 0))
 }
 
 export function openProject(project: string) {
@@ -87,7 +87,7 @@ export async function deleteProject() {
   const isExamples = project?.id === EXAMPLES
   if (!project || !await confirmDialog(t(isExamples ? 'dlg.resetExamples' : 'dlg.deleteProject', { name: project.name }))) return
   if (!isExamples) {
-    const entry = toTrash({ kind: 'project', name: project.name, project, files: allTestCases().map(f => M.toJSON(f)) })
+    const entry = toTrash({ kind: 'project', name: project.name, project, files: allTestCases().map(f => M.toJSON(f, 0)) })
     toast(t('toast.deletedProject', { name: project.name }), { action: { label: 'Undo', onClick: () => restore(entry) } })
   }
   activeId.value = '' // nothing left to save to
@@ -141,9 +141,10 @@ export function openFile(id: string) {
 // false: not saved (storage full or disabled).
 export function addFile(next: TestCase, { open = true, project = activeProject.value } = {}): boolean {
   const taken = project === activeProject.value ? files.value.map(f => f.name) : storage.fileIds(project).map(id => nameOf(project, id))
-  next.name = M.uniqueName(next.name, taken)
+  // an imported name past the limit (it names the zip and folder) is cut, with room for a _2
+  next.name = M.uniqueName(next.name.length > M.LIMITS.name ? next.name.slice(0, M.LIMITS.name - 4) : next.name, taken)
   const id = storage.newId()
-  if (!storage.writeFile(project, id, M.toJSON(next))) {
+  if (!storage.writeFile(project, id, M.toJSON(next, 0))) {
     toast.error(t('toast.saveFailed'))
     return false
   }
@@ -189,7 +190,7 @@ export async function renameFile(id: string) {
   const closed = read(activeProject.value, id)
   if (!closed) return
   closed.name = name
-  storage.writeFile(activeProject.value, id, M.toJSON(closed))
+  storage.writeFile(activeProject.value, id, M.toJSON(closed, 0))
   refresh()
 }
 
@@ -198,7 +199,7 @@ export async function deleteFile(id: string) {
   if (!file || !await confirmDialog(t('dlg.deleteFile', { name: file.name }))) return
   const content = read(activeProject.value, id)
   if (content && currentProject.value) {
-    const entry = toTrash({ kind: 'file', name: file.name, project: currentProject.value, files: [M.toJSON(content)] })
+    const entry = toTrash({ kind: 'file', name: file.name, project: currentProject.value, files: [M.toJSON(content, 0)] })
     toast(t('toast.deletedFile', { name: file.name }), { action: { label: 'Undo', onClick: () => restore(entry) } })
   }
   storage.deleteFile(activeProject.value, id)
@@ -238,7 +239,7 @@ export function restore(entry: Trashed | undefined) {
   const cases = entry.files.map(json => M.fromJSON(json))
   if (entry.kind === 'project') {
     const id = createProject(entry.name)
-    for (const tc of cases) storage.writeFile(id, storage.newId(), M.toJSON(tc))
+    for (const tc of cases) storage.writeFile(id, storage.newId(), M.toJSON(tc, 0))
     return reopen(id)
   }
   const home = projectList.value.some(p => p.id === entry.project.id) ? entry.project.id : activeProject.value
@@ -276,7 +277,7 @@ useEventListener(window, 'storage', (ev: StorageEvent) => {
   if (file.id === activeId.value && ev.newValue === null) {
     leaveDeleted(file.id)
     toast(t('toast.deletedElsewhere'))
-  } else if (file.id === activeId.value && ev.newValue !== null && ev.newValue !== M.toJSON(tc.value)) {
+  } else if (file.id === activeId.value && ev.newValue !== null && ev.newValue !== M.toJSON(tc.value, 0)) {
     try {
       reloadTestCase(M.fromJSON(ev.newValue))
       toast(t('toast.changedElsewhere', { name: tc.value.name }))

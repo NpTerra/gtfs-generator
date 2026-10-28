@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { confirmDialog } from '@/composables/useConfirm'
 import { setTab, tc } from '@/composables/useEditor'
 import { t } from '@/lib/i18n'
-import { cloneModel, isPhoneMissing, KNOWN_EXCEPTIONS } from '@/lib/model'
+import { cloneModel, isPhoneMissing, KNOWN_EXCEPTIONS, LIMITS, room } from '@/lib/model'
 
 async function copyArrange() {
   if (tc.value.expected.model.stations.length > 0 && !await confirmDialog(t('dlg.copyArrange'))) return
@@ -28,10 +28,10 @@ async function copyArrange() {
     <div class="@container flex-1 overflow-y-auto pb-6">
       <PanelSection id="test" title="Test">
         <FormField label="Name" :hint="t('hint.testName')">
-          <Input v-model="tc.name" data-field="test-name" />
+          <Input v-model="tc.name" data-field="test-name" :maxlength="room(LIMITS.name, tc.name)" />
         </FormField>
         <FormField label="Description (comment.txt)" :hint="t('hint.description')">
-          <Textarea v-model="tc.description" rows="4" class="text-[15px] leading-relaxed md:text-[15px]" />
+          <Textarea v-model="tc.description" :maxlength="room(LIMITS.description, tc.description)" rows="4" class="text-[15px] leading-relaxed md:text-[15px]" />
         </FormField>
         <FormField label="Act (act.txt)" :hint="t('hint.act')">
           <ActEditor />
@@ -50,7 +50,7 @@ async function copyArrange() {
           </div>
         </RadioGroup>
         <FormField v-if="tc.expected.type === 'exception'" label="Exception name" :hint="t('hint.exception')">
-          <PresetSelect v-model="tc.expected.exception" :options="KNOWN_EXCEPTIONS" title="Exception name (assert.txt)" />
+          <PresetSelect v-model="tc.expected.exception" :options="KNOWN_EXCEPTIONS" :max-length="room(LIMITS.exception, tc.expected.exception)" title="Exception name (assert.txt)" />
         </FormField>
         <div v-else class="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" title="Overwrite the Expected model with a copy of the Arrange model" @click="copyArrange">
@@ -63,14 +63,14 @@ async function copyArrange() {
       </PanelSection>
 
       <PanelSection id="agency" title="Agency">
-        <FormField label="Name"><Input v-model="tc.agency.name" /></FormField>
-        <FormField label="URL"><Input v-model="tc.agency.url" /></FormField>
+        <FormField label="Name"><Input v-model="tc.agency.name" :maxlength="room(LIMITS.text, tc.agency.name)" /></FormField>
+        <FormField label="URL"><Input v-model="tc.agency.url" :maxlength="room(LIMITS.text, tc.agency.url)" /></FormField>
         <div class="grid grid-cols-2 gap-2 @max-[16rem]:grid-cols-1">
-          <FormField label="Timezone"><Input v-model="tc.agency.timezone" /></FormField>
-          <FormField label="Language"><Input v-model="tc.agency.language" /></FormField>
+          <FormField label="Timezone"><Input v-model="tc.agency.timezone" :maxlength="room(LIMITS.text, tc.agency.timezone)" /></FormField>
+          <FormField label="Language"><Input v-model="tc.agency.language" :maxlength="room(LIMITS.text, tc.agency.language)" /></FormField>
         </div>
         <FormField label="Phone" :hint="isPhoneMissing(tc.agency) ? t('hint.phone') : undefined" warn>
-          <Input v-model="tc.agency.phone" data-field="agency-phone" />
+          <Input v-model="tc.agency.phone" data-field="agency-phone" :maxlength="room(LIMITS.text, tc.agency.phone)" />
         </FormField>
       </PanelSection>
     </div>

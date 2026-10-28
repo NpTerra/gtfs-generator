@@ -11,6 +11,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { applyGtfsImport, gtfsImport } from '@/composables/useGtfsImport'
+import { LIMITS } from '@/lib/model'
 import { inkFor } from '@/lib/utils'
 
 const TYPES: Record<number, string> = {
@@ -26,6 +27,11 @@ const visible = computed(() => {
   return q ? routes.value.filter(r => `${r.shortName} ${r.longName}`.toLowerCase().includes(q)) : routes.value
 })
 const targetName = computed(() => gtfsImport.target === 'expected' ? 'Expected' : 'Arrange')
+
+// a route's stop count is its longest trip, which is what the import takes:
+// too big a pick is caught here, before the (seconds-long) build
+const pickedStops = computed(() => routes.value.reduce((n, r) => n + (gtfsImport.selected.has(r.key) ? r.stopCount : 0), 0))
+const tooBig = computed(() => gtfsImport.selected.size > LIMITS.lines || pickedStops.value > LIMITS.stops)
 
 function toggle(key: string, on: boolean) {
   if (on) gtfsImport.selected.add(key)
@@ -82,10 +88,13 @@ const selectVisible = (on: boolean) => visible.value.forEach(r => toggle(r.key, 
       </div>
 
       <DialogFooter class="items-center gap-2 sm:justify-between">
-        <span class="text-muted-foreground">{{ gtfsImport.selected.size }} of {{ routes.length }} routes picked</span>
+        <span v-if="tooBig" class="font-semibold text-destructive" role="status">
+          Too big: {{ gtfsImport.selected.size }} routes, {{ pickedStops }} stops. The editor handles at most {{ LIMITS.lines }} lines and {{ LIMITS.stops }} stops.
+        </span>
+        <span v-else class="text-muted-foreground">{{ gtfsImport.selected.size }} of {{ routes.length }} routes picked, {{ pickedStops }} stops</span>
         <div class="flex gap-2">
           <Button variant="outline" @click="gtfsImport.open = false">Cancel</Button>
-          <Button :disabled="gtfsImport.selected.size === 0" @click="applyGtfsImport">
+          <Button :disabled="gtfsImport.selected.size === 0 || tooBig" @click="applyGtfsImport">
             {{ gtfsImport.target === 'new' ? 'Create test case' : `Replace ${targetName} model` }}
           </Button>
         </div>

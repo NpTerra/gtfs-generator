@@ -12,7 +12,7 @@ import {
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { Input } from '@/components/ui/input'
 
-const props = defineProps<{ options: string[]; title?: string; noInput?: boolean }>()
+const props = defineProps<{ options: string[]; title?: string; noInput?: boolean; maxLength?: number }>()
 const model = defineModel<string>({ required: true })
 const emit = defineEmits<{ custom: [] }>()
 
@@ -63,7 +63,7 @@ const item = 'flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text
         <div class="mb-1 flex items-center gap-2 rounded-md bg-muted px-2.5">
           <SearchIcon class="size-4 shrink-0 text-muted-foreground" />
           <ComboboxInput
-            v-model="query" auto-focus :display-value="() => ''"
+            v-model="query" auto-focus :maxlength="maxLength" :display-value="() => ''"
             placeholder="Search or type a name…"
             class="h-8 w-full min-w-0 bg-transparent font-mono text-sm outline-none placeholder:font-sans placeholder:text-muted-foreground"
           />
@@ -85,5 +85,5 @@ const item = 'flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text
       </ComboboxContent>
     </ComboboxPortal>
   </ComboboxRoot>
-  <Input v-if="isCustom && !noInput" ref="input" v-model="model" class="font-mono" placeholder="NAME" />
+  <Input v-if="isCustom && !noInput" ref="input" v-model="model" :maxlength="maxLength" class="font-mono" placeholder="NAME" />
 </template>
