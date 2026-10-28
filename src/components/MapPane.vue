@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // The center of the layout: toolbar (tabs, map tools) + map.
 import {
-  MaximizeIcon, PlusIcon, Redo2Icon, RulerIcon, Undo2Icon,
+  Columns2Icon, LayersIcon, MaximizeIcon, PlusIcon, Redo2Icon, RulerIcon, Undo2Icon,
 } from '@lucide/vue'
 import { ref } from 'vue'
+import CompareDialog from '@/components/CompareDialog.vue'
 import MapView from '@/components/MapView.vue'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -11,10 +12,11 @@ import {
   addStation, canEdit, canRedo, canUndo, editableModel, pickLine, pickLineId, redo, setTab, tab, tc, undo,
 } from '@/composables/useEditor'
 import { measure, measured, toggleMeasure } from '@/composables/useMeasure'
-import { freeSpot } from '@/composables/useViewport'
+import { freeSpot, showArrangeGhost } from '@/composables/useViewport'
 import { t } from '@/lib/i18n'
 
 const map = ref<InstanceType<typeof MapView>>()
+const comparing = ref(false)
 
 const num = (v: number, digits: number) => Number.isFinite(v) ? String(Number(v.toFixed(digits))) : '–'
 
@@ -37,6 +39,16 @@ function addStationHere() {
       </div>
 
       <div class="flex flex-wrap items-center gap-1">
+        <Button
+          v-if="tab === 'expected'" variant="outline" size="icon-sm" :disabled="!canEdit" :aria-pressed="showArrangeGhost"
+          :class="showArrangeGhost && 'border-signal bg-signal/10 text-link'"
+          title="Show the Arrange model faded underneath" aria-label="Show Arrange underneath" @click="showArrangeGhost = !showArrangeGhost"
+        >
+          <LayersIcon />
+        </Button>
+        <Button variant="outline" size="icon-sm" title="Compare Arrange and Expected side by side" aria-label="Compare side by side" @click="comparing = true">
+          <Columns2Icon />
+        </Button>
         <Button variant="outline" size="sm" :disabled="!canEdit" title="Add a station in the middle of the map" @click="addStationHere">
           <PlusIcon /> <span class="hidden @2xl:inline">Station</span>
         </Button>
@@ -100,5 +112,6 @@ function addStationHere() {
       </div>
 
     </div>
+    <CompareDialog v-model:open="comparing" />
   </main>
 </template>

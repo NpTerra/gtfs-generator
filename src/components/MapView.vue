@@ -2,26 +2,36 @@
 // SVG map: grid, faded Arrange model (on the Expected tab), act overlay,
 // lines and draggable stations. Everything drawn is computed from the store
 // and the viewport, so Vue re-renders it whenever either changes.
-import { useElementSize } from '@vueuse/core'
-import { computed, nextTick, ref, watch, watchEffect } from 'vue'
+// Given a `model` (and its own `viewport`), it only shows that model:
+// pan and zoom, no editing (the compare view).
+import { useResizeObserver } from '@vueuse/core'
+import { computed, nextTick, ref, watch } from 'vue'
 import {
   addStation, canEdit, clickStation, editableModel, loadCount, pickLine, selection, tab, tc,
 } from '@/composables/useEditor'
 import { measure, measureClick, measured } from '@/composables/useMeasure'
-import {
-  clampScale, cursorText, ensureVisible, fit, gridStep, screenToWorld, size, view, worldToScreen,
-} from '@/composables/useViewport'
+import { clampScale, cursorText, mainViewport, showArrangeGhost, type Viewport } from '@/composables/useViewport'
 import { computeAct } from '@/lib/acts'
 import { xyToGPS } from '@/lib/geo'
 import type { Model } from '@/lib/model'
 import { round6, setStationXY } from '@/lib/model'
 
-const svg = ref<SVGSVGElement>()
-const { width, height } = useElementSize(svg)
-watchEffect(() => { size.w = width.value; size.h = height.value })
+const props = withDefaults(defineProps<{ viewport?: Viewport; model?: Model | null }>(), { viewport: () => mainViewport })
+const readonly = props.model !== undefined
+const { view, size, worldToScreen, screenToWorld, gridStep, fit, ensureVisible } = props.viewport
 
-const model = computed<Model | null>(() => canEdit.value ? editableModel.value : null)
-const ghost = computed(() => tab.value === 'expected' && model.value ? tc.value.arrange : null)
+const svg = ref<SVGSVGElement>()
+// the layout size: useElementSize measures an svg with getBoundingClientRect,
+// which a dialog's zoom-in animation shrinks
+useResizeObserver(svg, ([entry]) => {
+  size.w = entry.contentRect.width
+  size.h = entry.contentRect.height
+})
+
+const model = computed<Model | null>(() => readonly ? props.model ?? null : canEdit.value ? editableModel.value : null)
+// tinted as Expected: the editor map on the Expected tab, a compare map showing that model
+const showsExpected = computed(() => readonly ? props.model === tc.value.expected.model : tab.value === 'expected')
+const ghost = computed(() => !readonly && showArrangeGhost.value && tab.value === 'expected' && model.value ? tc.value.arrange : null)
 const act = computed(() => model.value ? computeAct(model.value, tc.value.act) : null)
 
 // ---- what to draw ------------------------------------------------------------------
@@ -81,7 +91,7 @@ const stations = computed(() => (model.value?.stations ?? []).map(s => ({ s, p: 
 // the measure tool's line, in screen coordinates, with its label in the middle
 const ruler = computed(() => {
   const { a, b, distance } = measured.value
-  if (!a) return null
+  if (!a || readonly) return null // measuring is the editor map's tool
   const pa = worldToScreen(a.x, a.y)
   const pb = b ? worldToScreen(b.x, b.y) : null
   return { pa, pb, mid: pb && { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 }, label: formatDistance(distance) }
@@ -95,8 +105,10 @@ const ghostStations = computed(() => (ghost.value?.stations ?? []).map(s => ({ s
 
 // the first fit has to wait until the svg has been measured
 watch(() => size.w > 0 && size.h > 0, (measured) => { if (measured) fit(model.value, act.value) }, { once: true })
-watch(loadCount, () => nextTick(() => fit(model.value, act.value)))
-watch(tab, () => nextTick(() => ensureVisible(model.value, act.value)))
+if (!readonly) {
+  watch(loadCount, () => nextTick(() => fit(model.value, act.value)))
+  watch(tab, () => nextTick(() => ensureVisible(model.value, act.value)))
+}
 defineExpose({ fit: () => fit(model.value, act.value) })
 
 // ---- interaction: pan, pinch, wheel zoom, drag stations, double-click to add -----------
@@ -149,8 +161,8 @@ function onPointerDown(ev: PointerEvent) {
   if (ev.button !== 0) return
   const pt = eventPoint(ev)
   const id = stationAt(ev)
-  const station = id !== null && canEdit.value ? findStation(id) : undefined
-  if (measure.on) { // measuring: drags pan, a click (on pointer up) sets a point
+  const station = id !== null && canEdit.value && !readonly ? findStation(id) : undefined
+  if (measure.on && !readonly) { // measuring: drags pan, a click (on pointer up) sets a point
     drag = { type: 'pan', startX: pt.x, startY: pt.y, cx: view.cx, cy: view.cy, stationId: station?.id }
   } else if (station) {
     const w = screenToWorld(pt.x, pt.y)
@@ -175,14 +187,14 @@ function onPointerMove(ev: PointerEvent) {
   }
   const pt = eventPoint(ev)
   const w = screenToWorld(pt.x, pt.y)
-  try {
+  if (!readonly) try {
     const gps = xyToGPS(w.x, w.y)
     cursorText.value = `x ${w.x.toFixed(1)}  y ${w.y.toFixed(1)}   lat ${gps.lat.toFixed(6)}  lon ${gps.lon.toFixed(6)}`
   } catch {
     cursorText.value = `x ${w.x.toFixed(1)}  y ${w.y.toFixed(1)}`
   }
 
-  if (measure.on && measure.from && !measure.to) {
+  if (measure.on && !readonly && measure.from && !measure.to) {
     const id = stationAt(ev)
     measure.hover = id !== null && findStation(id) ? { ...w, stationId: id } : w
   }
@@ -220,7 +232,7 @@ function liftPointer(ev: PointerEvent) {
 function onPointerUp(ev: PointerEvent) {
   if (liftPointer(ev)) return
   if (drag?.type === 'station' && !drag.moved) clickStation(drag.id)
-  if (drag?.type === 'pan' && measure.on) {
+  if (drag?.type === 'pan' && measure.on && !readonly) {
     const pt = eventPoint(ev)
     if (Math.hypot(pt.x - drag.startX, pt.y - drag.startY) < 4) measureClick({ ...screenToWorld(pt.x, pt.y), stationId: drag.stationId })
   }
@@ -244,7 +256,7 @@ function onWheel(ev: WheelEvent) {
 }
 
 function onDblClick(ev: MouseEvent) {
-  if (stationAt(ev) !== null || !canEdit.value || measure.on) return
+  if (stationAt(ev) !== null || !canEdit.value || readonly || measure.on) return
   const pt = eventPoint(ev)
   const w = screenToWorld(pt.x, pt.y)
   addStation(snap(w.x, ev.shiftKey), snap(w.y, ev.shiftKey))
@@ -254,9 +266,9 @@ function onDblClick(ev: MouseEvent) {
 <template>
   <svg
     ref="svg" class="map block size-full touch-none select-none"
-    :class="[panning ? 'cursor-grabbing' : measure.on ? 'cursor-crosshair' : 'cursor-grab', tab === 'expected' && 'expected']"
+    :class="[panning ? 'cursor-grabbing' : measure.on && !readonly ? 'cursor-crosshair' : 'cursor-grab', showsExpected && 'expected']"
     @pointerdown="onPointerDown" @pointermove="onPointerMove" @pointerup="onPointerUp"
-    @pointercancel="onPointerCancel" @pointerleave="cursorText = ''" @wheel.prevent="onWheel" @dblclick="onDblClick"
+    @pointercancel="onPointerCancel" @pointerleave="readonly || (cursorText = '')" @wheel.prevent="onWheel" @dblclick="onDblClick"
   >
     <g>
       <template v-for="g in grid.xs" :key="'x' + g.i">
@@ -297,7 +309,7 @@ function onDblClick(ev: MouseEvent) {
         <circle v-if="act?.ringStationIds.has(s.id)" :cx="p.x" :cy="p.y" r="13" class="act-ring" />
         <circle
           :cx="p.x" :cy="p.y" r="7" :data-station-id="s.id" class="station-dot"
-          :class="{ selected: selection === s.id, 'act-target': act?.ringStationIds.has(s.id), picking: pickLine }"
+          :class="{ selected: !readonly && selection === s.id, 'act-target': act?.ringStationIds.has(s.id), picking: !readonly && pickLine }"
         >
           <title>{{ s.name }} (S{{ s.id }})  x={{ round6(s.x) }} y={{ round6(s.y) }}</title>
         </circle>
