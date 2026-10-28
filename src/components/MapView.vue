@@ -1,30 +1,34 @@
 <script setup lang="ts">
-// SVG map: grid, faded Arrange model (on the Expected tab), act overlay,
-// lines and draggable stations. Everything drawn is computed from the store
-// and the viewport, so Vue re-renders it whenever either changes.
+// Canvas map: grid, faded Arrange model (on the Expected tab), act overlay,
+// lines and draggable stations. What to draw is worked out from the store and
+// the zoom (panning doesn't redo it); draw() paints it all whenever any of it
+// changes. Stations under the pointer are found by distance, not by DOM hit.
 // Given a `model` (and its own `viewport`), it only shows that model:
 // pan and zoom, no editing (the compare view).
-import { useResizeObserver } from '@vueuse/core'
-import { computed, nextTick, ref, watch } from 'vue'
+import { useDevicePixelRatio, useEventListener, useResizeObserver, useThrottleFn } from '@vueuse/core'
+import { computed, nextTick, onMounted, ref, useTemplateRef, watch, watchEffect } from 'vue'
 import {
-  addStation, canEdit, clickStation, editableModel, loadCount, pickLine, selection, tab, tc,
+  addStation, canEdit, clickStation, editableModel, loadCount, selection, tab, tc,
 } from '@/composables/useEditor'
 import { measure, measureClick, measured } from '@/composables/useMeasure'
+import { themeShown } from '@/composables/useTheme'
 import { clampScale, cursorText, labelMode, mainViewport, showArrangeGhost, type Viewport } from '@/composables/useViewport'
 import { type Box, placeLabels } from '@/lib/labels'
 import { computeAct } from '@/lib/acts'
 import { xyToGPS } from '@/lib/geo'
-import type { Model } from '@/lib/model'
+import type { Model, Station } from '@/lib/model'
 import { round6, setStationXY } from '@/lib/model'
+import { secondNearest } from '@/lib/spacing'
 
 const props = withDefaults(defineProps<{ viewport?: Viewport; model?: Model | null }>(), { viewport: () => mainViewport })
 const readonly = props.model !== undefined
 const { view, size, worldToScreen, screenToWorld, gridStep, fit, ensureVisible } = props.viewport
 
-const svg = ref<SVGSVGElement>()
-// the layout size: useElementSize measures an svg with getBoundingClientRect,
-// which a dialog's zoom-in animation shrinks
-useResizeObserver(svg, ([entry]) => {
+const box = ref<HTMLDivElement>()
+const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
+// the layout size: useElementSize measures with getBoundingClientRect, which a
+// dialog's zoom-in animation shrinks
+useResizeObserver(box, ([entry]) => {
   size.w = entry.contentRect.width
   size.h = entry.contentRect.height
 })
@@ -37,41 +41,58 @@ const act = computed(() => model.value ? computeAct(model.value, tc.value.act) :
 
 // ---- what to draw ------------------------------------------------------------------
 
-function formatMeters(v: number) {
-  return Math.abs(v) >= 1000 ? (v / 1000) + ' km' : String(round6(v))
-}
+// Everything but the grid is laid out in layer coordinates (world x layoutScale,
+// y down), which only change with the zoom; drawing shifts the layer by `pan`.
+// They're measured from `origin`, a world point near the view taken at layout time:
+// the canvas keeps coordinates in 32-bit floats, and an imported city's meters from
+// GPS 0,0 (Budapest: y ≈ 5 250 000) times the zoom lost pixels from ~2 px/m and
+// drew nothing at all past ~6 px/m.
+const layoutScale = ref(view.scale)
+const origin = ref({ x: view.cx, y: view.cy })
+const layOut = () => { layoutScale.value = view.scale; origin.value = { x: view.cx, y: view.cy } }
+const toLayer = (x: number, y: number) => ({ x: (x - origin.value.x) * layoutScale.value, y: -(y - origin.value.y) * layoutScale.value })
+const pan = computed(() => ({
+  x: size.w / 2 - (view.cx - origin.value.x) * view.scale,
+  y: size.h / 2 + (view.cy - origin.value.y) * view.scale,
+}))
+// panned a long way without zooming: lay out around the new place, before precision suffers
+watch(() => Math.max(Math.abs(view.cx - origin.value.x), Math.abs(view.cy - origin.value.y)) * layoutScale.value > 1e6,
+  (far) => { if (far) layOut() })
+const zoom = computed(() => view.scale / layoutScale.value) // 1 except mid-zoom on a big map
 
-const grid = computed(() => {
-  const step = gridStep()
-  const tl = screenToWorld(0, 0) // min x, max y
-  const br = screenToWorld(size.w, size.h) // max x, min y
-  const xs = [], ys = []
-  for (let i = Math.floor(tl.x / step); i <= Math.ceil(br.x / step); i++)
-    xs.push({ i, pos: worldToScreen(i * step, 0).x, label: formatMeters(i * step) })
-  for (let i = Math.floor(br.y / step); i <= Math.ceil(tl.y / step); i++)
-    ys.push({ i, pos: worldToScreen(0, i * step).y, label: formatMeters(i * step) })
-  return { xs, ys }
+// Zooming a big map (wheel, pinch, or the other map of a synced compare view) lays it
+// out again at most every 200 ms; in between, the last layout is scaled like a picture
+// (names and dots grow or shrink for a moment). A single change (Fit view) is laid out
+// right away: the throttle runs its first call at once.
+const BIG = 300 // ponytail: station count above which a relayout per wheel tick drops frames
+// leading too: without it, wheel ticks over 200 ms apart (a mouse wheel's slow clicks) never relaid it
+const relayout = useThrottleFn(layOut, 200, true, true)
+watch(() => view.scale, () => {
+  if ((model.value?.stations.length ?? 0) + (ghost.value?.stations.length ?? 0) > BIG) relayout()
+  else layOut()
+}, { flush: 'sync' })
+
+// ---- what's in view: only things with no part near the screen are skipped -------------
+// The drawn area is the screen plus a margin of half a screen or more, in steps of
+// that margin, so it only changes every so often while panning (not every frame),
+// and nothing pops into existence at the edges.
+const cull = computed<Box>((prev) => {
+  const m = Math.max(200, Math.ceil(Math.max(size.w, size.h) / 2))
+  const { x, y } = pan.value, z = zoom.value // the screen in layer coordinates: (0 - x) / z ...
+  const x1 = (Math.floor(-x / z / m) - 1) * m, y1 = (Math.floor(-y / z / m) - 1) * m
+  const x2 = (Math.ceil((size.w - x) / z / m) + 1) * m, y2 = (Math.ceil((size.h - y) / z / m) + 1) * m
+  return prev && prev.x1 === x1 && prev.y1 === y1 && prev.x2 === x2 && prev.y2 === y2 ? prev : { x1, y1, x2, y2 }
 })
-
-function screenPoints(m: Model, stopIds: number[]) {
-  const byId = new Map(m.stations.map(s => [s.id, s]))
-  return stopIds.map(id => byId.get(id)).filter(s => s !== undefined).map(s => worldToScreen(s.x, s.y))
-}
-
-// Lines sharing a stretch between two stations are drawn side by side, each
-// shifted by its rank among the lines on that stretch only (a line alone on a
-// stretch stays on it). The shift's side comes from the station pair in id
-// order, so it doesn't flip with a line's direction of travel.
-// ---- what's in view: only things with no part on screen are skipped -------------------
-// The margin is larger than a station's biggest drawn extent (its 16 px click
-// area, its act ring), so nothing pops into existence at the edges.
-const CULL = 32 // px
-const inView = (b: Box) => b.x2 > -CULL && b.x1 < size.w + CULL && b.y2 > -CULL && b.y1 < size.h + CULL
+const inView = (b: Box) => b.x2 > cull.value.x1 && b.x1 < cull.value.x2 && b.y2 > cull.value.y1 && b.y1 < cull.value.y2
 const around = (p: { x: number; y: number }, r: number): Box => ({ x1: p.x - r, y1: p.y - r, x2: p.x + r, y2: p.y + r })
 // a stretch's bounding box, widened by its side shift and line width (glow included)
 const stretchInView = (a: { x: number; y: number }, b: { x: number; y: number }, pad: number) =>
   inView({ x1: Math.min(a.x, b.x) - pad, y1: Math.min(a.y, b.y) - pad, x2: Math.max(a.x, b.x) + pad, y2: Math.max(a.y, b.y) + pad })
 
+// Lines sharing a stretch between two stations are drawn side by side, each
+// shifted by its rank among the lines on that stretch only (a line alone on a
+// stretch stays on it). The shift's side comes from the station pair in id
+// order, so it doesn't flip with a line's direction of travel.
 const pairKey = (a: number, b: number) => a < b ? `${a}-${b}` : `${b}-${a}`
 // the drawable lines with their stations, and which lines share each stretch;
 // only changes with the model, not on every pan frame
@@ -102,7 +123,7 @@ const lines = computed(() => {
       const on = sharing.get(pairKey(stops[i].id, stops[i + 1].id))!
       // side by side, but the whole bundle never gets wider than a dot (they overlap instead)
       const offset = (on.indexOf(line.id) - (on.length - 1) / 2) * Math.min(lineW.value, 2 * dotR.value / on.length)
-      const a = worldToScreen(stops[i].x, stops[i].y), b = worldToScreen(stops[i + 1].x, stops[i + 1].y)
+      const a = toLayer(stops[i].x, stops[i].y), b = toLayer(stops[i + 1].x, stops[i + 1].y)
       if (!stretchInView(a, b, Math.abs(offset) + 8)) continue
       const [lo, hi] = stops[i].id < stops[i + 1].id ? [a, b] : [b, a]
       const len = Math.hypot(hi.x - lo.x, hi.y - lo.y) || 1
@@ -111,54 +132,40 @@ const lines = computed(() => {
     }
     const names = act.value?.lineNames
     const isTarget = !!names && (names.has(line.shortName.toLowerCase()) || names.has(line.name.toLowerCase()))
-    return { line, d, isTarget }
-  }).filter(l => l.d)
+    return { line, path: new Path2D(d), isTarget, empty: !d }
+  }).filter(l => !l.empty)
 })
 
-const ghostLines = computed(() => ghost.value
-  ? ghost.value.lines
-    .map(line => ({ line, pts: screenPoints(ghost.value!, line.stops.map(st => st.stationId)) }))
-    .map(({ line, pts }) => ({
-      line, d: pts.slice(1).map((b, i) => stretchInView(pts[i], b, 4) ? `M ${pts[i].x} ${pts[i].y} L ${b.x} ${b.y} ` : '').join(''),
-    }))
-    .filter(g => g.d)
-  : [])
+const ghostLines = computed(() => {
+  if (!ghost.value) return []
+  const byId = new Map(ghost.value.stations.map(s => [s.id, s]))
+  return ghost.value.lines.map((line) => {
+    const pts = line.stops.map(st => byId.get(st.stationId)).filter(s => s !== undefined).map(s => toLayer(s.x, s.y))
+    const d = pts.slice(1).map((b, i) => stretchInView(pts[i], b, 4) ? `M ${pts[i].x} ${pts[i].y} L ${b.x} ${b.y} ` : '').join('')
+    return { line, path: new Path2D(d), empty: !d }
+  }).filter(g => !g.empty)
+})
 
-const stations = computed(() => (model.value?.stations ?? []).map(s => ({ s, p: worldToScreen(s.x, s.y) })))
+const stations = computed(() => (model.value?.stations ?? []).map(s => ({ s, p: toLayer(s.x, s.y) })))
 
 // ---- crowded maps: smaller dots, and only the names that fit ----------------------------
 
 const onScreen = computed(() => stations.value.filter(({ p }) => inView(around(p, 16)))) // dot, ring or click area
-// the average room each station on screen has, in px
 // How close stations on screen are: the median distance to the second nearest
 // other one, in px (along a line: the next stop; the nearest is often the same
-// stop's other platform). A grid of buckets finds it; beyond a bucket's reach
-// counts as roomy. An average over the screen's area would be fooled by the
-// empty space between lines.
-const nearest = computed(() => {
-  const CELL = 40
-  const pts = onScreen.value.map(({ p }) => p)
-  const grid = new Map<string, { x: number; y: number }[]>()
-  const key = (x: number, y: number) => Math.floor(x / CELL) + ':' + Math.floor(y / CELL)
-  for (const p of pts) {
-    const list = grid.get(key(p.x, p.y))
-    if (list) list.push(p); else grid.set(key(p.x, p.y), [p])
-  }
-  const dists = pts.map((p) => {
-    let first = CELL, second = CELL
-    for (let dx = -1; dx <= 1; dx++)
-      for (let dy = -1; dy <= 1; dy++)
-        for (const q of grid.get(key(p.x + dx * CELL, p.y + dy * CELL)) ?? []) {
-          if (q === p) continue
-          const d = Math.hypot(q.x - p.x, q.y - p.y)
-          if (d < first) [first, second] = [d, first]
-          else if (d < second) second = d
-        }
-    return second
-  }).sort((a, b) => a - b)
+// stop's other platform), capped at CELL px (roomy). An average over the screen's
+// area would be fooled by the empty space between lines. The distances are found
+// once per model, in meters (lib/spacing.ts); zooming only scales them.
+const CELL = 40
+function medianSpacing(spacing: Map<number, number>, shown: { s: Station }[]) {
+  const k = layoutScale.value
+  const dists = shown.map(({ s }) => Math.min(CELL, (spacing.get(s.id) ?? Infinity) * k)).sort((a, b) => a - b)
   return dists.length > 1 ? dists[dists.length >> 1] : CELL
-})
-const dotR = computed(() => Math.max(1.5, Math.min(7, nearest.value / 5)))
+}
+const dotSize = (nearest: number) => Math.max(1.5, Math.min(7, nearest / 5))
+const spacing = computed(() => secondNearest(model.value?.stations ?? []))
+const nearest = computed(() => medianSpacing(spacing.value, onScreen.value))
+const dotR = computed(() => dotSize(nearest.value))
 // packed too tight to point at one: plain markers, no clicking, hovering or dragging (zoom in for that)
 const markers = computed(() => dotR.value < 3)
 const lineW = computed(() => Math.max(1, Math.min(3.5, dotR.value / 2)))
@@ -169,6 +176,9 @@ let measureCtx: CanvasRenderingContext2D | null = null
 let fontFamily = ''
 const family = () => fontFamily ||= getComputedStyle(document.documentElement).getPropertyValue('--font-sans') || 'sans-serif'
 const widths = new Map<string, number>()
+// names measured before the web font arrived used the fallback's widths: measure again
+const fontsLoaded = ref(0)
+useEventListener(document.fonts, 'loadingdone', () => { widths.clear(); fontsLoaded.value++ })
 function textWidth(text: string, font: string) {
   const key = font + '|' + text
   let w = widths.get(key)
@@ -185,6 +195,7 @@ function textWidth(text: string, font: string) {
 const labelBoxes = computed(() => {
   const r = dotR.value
   const [nameSize, idSize] = compact.value ? [11, 9.5] : [13, 11]
+  void fontsLoaded.value
   return stations.value.map(({ s, p }) => {
     const w = textWidth(s.name + ' ', `700 ${nameSize}px ${family()}`) + textWidth(`(S${s.id})`, `500 ${idSize}px ${family()}`)
     const x = p.x + r + 3, y = p.y - r - 1 // the text's start and baseline
@@ -196,28 +207,35 @@ const labelBoxes = computed(() => {
   }).filter(l => inView(l.box) || inView(l.dot))
 })
 
-// the faded Arrange stations on the Expected tab: smaller, names below in italics
+// the faded Arrange model on the Expected tab: sized by its own crowding like the
+// model's (smaller still), names below in italics
 const GHOST = 1e9 // their label ids, apart from the model's station ids
-const ghostR = computed(() => Math.min(5, dotR.value))
-const ghostStations = computed(() => (ghost.value?.stations ?? []).map(s => {
-  const p = worldToScreen(s.x, s.y), r = ghostR.value
+const ghostPoints = computed(() => (ghost.value?.stations ?? []).map(s => ({ s, p: toLayer(s.x, s.y) })))
+const ghostSpacing = computed(() => secondNearest(ghost.value?.stations ?? []))
+const ghostR = computed(() => Math.min(5, dotSize(medianSpacing(ghostSpacing.value, ghostPoints.value.filter(({ p }) => inView(around(p, 8)))))))
+const ghostLineW = computed(() => Math.max(1, Math.min(3, ghostR.value / 2)))
+const ghostStations = computed(() => ghostPoints.value.map(({ s, p }) => {
+  void fontsLoaded.value
+  const r = ghostR.value
   const x = p.x + r + 3, y = p.y + r + 9
   const w = textWidth(s.name, `italic 400 11px ${family()}`)
   return { s, p, x, y, box: { x1: x - 2, y1: y - 11, x2: x + w + 2, y2: y + 3 }, dot: around(p, r + 1) }
 }).filter(g => inView(g.box) || inView(g.dot)))
 
-// the ids of the names drawn (faded ones as GHOST + id); the faded ones come last
+// the ids of the names drawn (faded ones as GHOST + id)
 const labelIds = computed<Set<number>>(() => {
   if (labelMode.value === 'none') return new Set()
-  const all = [
-    ...labelBoxes.value.map(({ s, box, dot }) => ({
-      id: s.id, box, dot,
-      priority: !readonly && selection.value === s.id ? 3 : act.value?.ringStationIds.has(s.id) ? 2 : 1,
-    })),
-    ...ghostStations.value.map(({ s, box }) => ({ id: GHOST + s.id, box, priority: 0 })), // faded dots block no names
-  ]
-  if (labelMode.value === 'all') return new Set(all.filter(l => inView(l.box)).map(l => l.id))
-  return placeLabels(all)
+  const real = labelBoxes.value.map(({ s, box, dot }) => ({
+    id: s.id, box, dot,
+    priority: !readonly && selection.value === s.id ? 3 : act.value?.ringStationIds.has(s.id) ? 2 : 1,
+  }))
+  const faded = ghostStations.value.map(({ s, box, dot }) => ({ id: GHOST + s.id, box, dot, priority: 1 }))
+  if (labelMode.value === 'all') return new Set([...real, ...faded].filter(l => inView(l.box)).map(l => l.id))
+  const shown = placeLabels(real)
+  // the faded names fit in around everything real (faded dots never push a real name out)
+  const taken = [...real.map(c => c.dot), ...real.filter(c => shown.has(c.id)).map(c => c.box)]
+  for (const id of placeLabels(faded, taken)) shown.add(id)
+  return shown
 })
 const labelled = computed(() => {
   const shown = stations.value.filter(({ s }) => s.id !== hovered.value && labelIds.value.has(s.id))
@@ -229,21 +247,23 @@ const labelled = computed(() => {
 const ruler = computed(() => {
   const { a, b, distance } = measured.value
   if (!a || readonly) return null // measuring is the editor map's tool
-  const pa = worldToScreen(a.x, a.y)
-  const pb = b ? worldToScreen(b.x, b.y) : null
+  const pa = toLayer(a.x, a.y)
+  const pb = b ? toLayer(b.x, b.y) : null
   return { pa, pb, mid: pb && { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 }, label: formatDistance(distance) }
 })
 function formatDistance(m: number) {
   return m >= 1000 ? `${(m / 1000).toFixed(3)} km` : `${Number(m.toFixed(3))} m`
 }
 const actCircles = computed(() => (act.value?.circles ?? [])
-  .map(c => ({ ...worldToScreen(c.x, c.y), r: c.r * view.scale }))
+  .map(c => ({ ...toLayer(c.x, c.y), r: c.r * layoutScale.value }))
   .filter(c => inView(around(c, c.r + 2))))
 
 // ---- camera: fit on load, keep visible on tab switch ----------------------------------
 
-// the first fit has to wait until the svg has been measured
+// the first fit has to wait until the map has been measured
 watch(() => size.w > 0 && size.h > 0, (measured) => { if (measured) fit(model.value, act.value) }, { once: true })
+// the compare view's maps come back with their last size already measured: fit them then
+onMounted(() => { if (size.w > 0 && size.h > 0) fit(model.value, act.value) })
 if (!readonly) {
   watch(loadCount, () => nextTick(() => fit(model.value, act.value)))
   watch(tab, () => nextTick(() => ensureVisible(model.value, act.value)))
@@ -264,13 +284,22 @@ let pinch: { dist: number; scale: number; wx: number; wy: number } | null = null
 const snap = (v: number, fine: boolean) => { const step = fine ? 0.01 : 1; return Math.round(v / step) * step }
 
 function eventPoint(ev: PointerEvent | MouseEvent | WheelEvent) {
-  const r = svg.value!.getBoundingClientRect()
+  const r = canvas.value!.getBoundingClientRect()
   return { x: ev.clientX - r.left, y: ev.clientY - r.top }
 }
 
-const stationAt = (ev: Event) => {
-  const id = (ev.target as Element).getAttribute?.('data-station-id')
-  return id === null ? null : Number(id)
+// the station under the pointer: the nearest within a finger's reach (16 px), so a
+// dot always wins over a neighbour's reach; none while they're plain markers
+function stationAt(ev: MouseEvent) {
+  if (markers.value) return null
+  const pt = eventPoint(ev)
+  const x = (pt.x - pan.value.x) / zoom.value, y = (pt.y - pan.value.y) / zoom.value
+  let best: number | null = null, bestD = 16
+  for (const { s, p } of onScreen.value) {
+    const d = Math.hypot(p.x - x, p.y - y)
+    if (d <= bestD) { best = s.id; bestD = d }
+  }
+  return best
 }
 const findStation = (id: number) => model.value?.stations.find(s => s.id === id)
 
@@ -293,7 +322,7 @@ function onPointerDown(ev: PointerEvent) {
       drag = null
       panning.value = false
       rebasePinch()
-      svg.value!.setPointerCapture(ev.pointerId)
+      canvas.value!.setPointerCapture(ev.pointerId)
       return
     }
   }
@@ -310,7 +339,7 @@ function onPointerDown(ev: PointerEvent) {
     drag = { type: 'pan', startX: pt.x, startY: pt.y, cx: view.cx, cy: view.cy, stationId: station?.id }
     panning.value = true
   }
-  svg.value!.setPointerCapture(ev.pointerId)
+  canvas.value!.setPointerCapture(ev.pointerId)
 }
 
 function onPointerMove(ev: PointerEvent) {
@@ -400,88 +429,242 @@ function onWheel(ev: WheelEvent) {
 function onDblClick(ev: MouseEvent) {
   if (stationAt(ev) !== null || !canEdit.value || readonly || measure.on) return
   const pt = eventPoint(ev)
+  // plain markers can't be pointed at (stationAt is null), but a new station shouldn't land on one
+  const x = (pt.x - pan.value.x) / zoom.value, y = (pt.y - pan.value.y) / zoom.value
+  if (onScreen.value.some(({ p }) => Math.hypot(p.x - x, p.y - y) * zoom.value <= dotR.value + 3)) return
   const w = screenToWorld(pt.x, pt.y)
   addStation(snap(w.x, ev.shiftKey), snap(w.y, ev.shiftKey))
 }
+
+// ---- drawing --------------------------------------------------------------------------
+
+// The theme's colors, resolved through a hidden element inside the map (so the
+// Expected tint and color-mix() come out as plain colors a canvas understands).
+const probe = useTemplateRef<HTMLSpanElement>('probe')
+const TOKENS = ['--map-bg', '--grid', '--grid-axis', '--grid-label', '--foreground', '--muted-foreground', '--signal', '--destructive'] as const
+type Colors = Record<(typeof TOKENS)[number], string>
+const colors = computed<Colors | null>(() => {
+  void themeShown.value, showsExpected.value // re-read when either changes
+  const el = probe.value
+  if (!el) return null
+  return Object.fromEntries(TOKENS.map((token) => {
+    el.style.color = `var(${token})`
+    return [token, getComputedStyle(el).color]
+  })) as Colors
+})
+
+function formatMeters(v: number) {
+  return Math.abs(v) >= 1000 ? (v / 1000) + ' km' : String(round6(v))
+}
+const circle = (ctx: CanvasRenderingContext2D, x: number, y: number, r: number) => {
+  ctx.beginPath()
+  ctx.arc(x, y, r, 0, Math.PI * 2)
+}
+
+// the grid's lines and their meter labels, in screen coordinates
+function gridLines() {
+  const step = gridStep()
+  const tl = screenToWorld(0, 0), br = screenToWorld(size.w, size.h)
+  const xs = [], ys = []
+  for (let i = Math.floor(tl.x / step); i <= Math.ceil(br.x / step); i++) xs.push({ i, at: worldToScreen(i * step, 0).x, label: formatMeters(i * step) })
+  for (let i = Math.floor(br.y / step); i <= Math.ceil(tl.y / step); i++) ys.push({ i, at: worldToScreen(0, i * step).y, label: formatMeters(i * step) })
+  return { xs, ys }
+}
+
+function drawGrid(ctx: CanvasRenderingContext2D, c: Colors, { xs, ys }: ReturnType<typeof gridLines>) {
+  for (const { i, at } of xs) {
+    ctx.strokeStyle = i === 0 ? c['--grid-axis'] : c['--grid']
+    ctx.lineWidth = i === 0 ? 1.5 : 1
+    ctx.beginPath(); ctx.moveTo(at, 0); ctx.lineTo(at, size.h); ctx.stroke()
+  }
+  for (const { i, at } of ys) {
+    ctx.strokeStyle = i === 0 ? c['--grid-axis'] : c['--grid']
+    ctx.lineWidth = i === 0 ? 1.5 : 1
+    ctx.beginPath(); ctx.moveTo(0, at); ctx.lineTo(size.w, at); ctx.stroke()
+  }
+}
+
+// the meter labels go on top of everything (with a halo), so lines never hide them
+function drawGridLabels(ctx: CanvasRenderingContext2D, c: Colors, { xs, ys }: ReturnType<typeof gridLines>) {
+  ctx.font = `10.5px ${monoFamily()}`
+  let free = -Infinity // long labels ("1430.746 km") are wider than the lines' spacing: skip those that would touch
+  for (const { at, label } of xs) {
+    if (at + 3 < free) continue
+    haloText(ctx, label, at + 3, size.h - 5, c['--grid-label'], c['--map-bg'], 3)
+    free = at + 3 + ctx.measureText(label).width + 12
+  }
+  for (const { at, label } of ys) haloText(ctx, label, 4, at - 4, c['--grid-label'], c['--map-bg'], 3)
+}
+
+// text with a halo in the map's background, so it stays readable over lines
+function haloText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, fill: string, halo: string, width: number) {
+  ctx.strokeStyle = halo
+  ctx.lineWidth = width
+  ctx.strokeText(text, x, y)
+  ctx.fillStyle = fill
+  ctx.fillText(text, x, y)
+}
+
+// reactive, so moving the window to a screen of another density redraws it sharp
+const { pixelRatio } = useDevicePixelRatio()
+
+let monoFamilyName = ''
+const monoFamily = () => monoFamilyName ||= getComputedStyle(document.documentElement).getPropertyValue('--font-mono') || 'monospace'
+
+function draw() {
+  const el = canvas.value, c = colors.value
+  if (!el || !c || size.w === 0 || size.h === 0) return
+  const dpr = pixelRatio.value
+  const w = Math.round(size.w * dpr), h = Math.round(size.h * dpr)
+  if (el.width !== w || el.height !== h) { el.width = w; el.height = h }
+  const ctx = el.getContext('2d')!
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.globalAlpha = 1
+  ctx.setLineDash([])
+  ctx.fillStyle = c['--map-bg']
+  ctx.fillRect(0, 0, size.w, size.h)
+  const grid = gridLines()
+  drawGrid(ctx, c, grid)
+
+  // the layer, at its place on screen (and scaled like a picture mid-zoom)
+  const z = zoom.value
+  ctx.setTransform(dpr * z, 0, 0, dpr * z, dpr * pan.value.x, dpr * pan.value.y)
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+
+  if (ghost.value) {
+    ctx.globalAlpha = 0.35
+    const gw = ghostLineW.value
+    ctx.lineWidth = gw
+    ctx.setLineDash([gw * 2, gw * 1.3])
+    for (const g of ghostLines.value) {
+      ctx.strokeStyle = g.line.color || '#555'
+      ctx.stroke(g.path)
+    }
+    ctx.setLineDash([])
+    ctx.strokeStyle = c['--foreground']
+    ctx.lineWidth = 1.5
+    ctx.font = `italic 400 11px ${family()}`
+    ctx.fillStyle = c['--foreground']
+    for (const { s, p, x, y, dot } of ghostStations.value) {
+      if (inView(dot)) { circle(ctx, p.x, p.y, ghostR.value); ctx.stroke() }
+      if (labelIds.value.has(GHOST + s.id)) ctx.fillText(s.name, x, y)
+    }
+    ctx.globalAlpha = 1
+  }
+
+  ctx.setLineDash([6, 5])
+  ctx.lineWidth = 1.5
+  for (const a of actCircles.value) {
+    circle(ctx, a.x, a.y, a.r)
+    ctx.globalAlpha = 0.07
+    ctx.fillStyle = c['--destructive']
+    ctx.fill()
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = c['--destructive']
+    ctx.stroke()
+  }
+  ctx.setLineDash([])
+
+  ctx.globalAlpha = 0.9
+  for (const l of lines.value) {
+    ctx.strokeStyle = l.line.color || '#555'
+    ctx.lineWidth = l.isTarget ? lineW.value + 1.5 : lineW.value
+    if (l.isTarget) { ctx.shadowColor = c['--destructive']; ctx.shadowBlur = 6 }
+    ctx.stroke(l.path)
+    ctx.shadowBlur = 0
+  }
+  ctx.globalAlpha = 1
+
+  const r = dotR.value
+  const editing = !readonly
+  for (const { s, p } of onScreen.value) {
+    const target = act.value?.ringStationIds.has(s.id) ?? false
+    const selected = editing && selection.value === s.id
+    if (target) {
+      ctx.setLineDash([3, 3])
+      ctx.strokeStyle = c['--destructive']
+      ctx.lineWidth = 2
+      circle(ctx, p.x, p.y, r + 6)
+      ctx.stroke()
+      ctx.setLineDash([])
+    }
+    circle(ctx, p.x, p.y, r)
+    if (markers.value) { // plain markers: no outline
+      ctx.fillStyle = selected ? c['--signal'] : target ? c['--destructive'] : c['--foreground']
+      ctx.fill()
+      continue
+    }
+    ctx.fillStyle = selected || hovered.value === s.id ? c['--signal'] : c['--map-bg']
+    ctx.fill()
+    ctx.strokeStyle = target ? c['--destructive'] : c['--foreground']
+    ctx.lineWidth = selected ? 3 : r < 5 ? 1.75 : 2.5
+    ctx.stroke()
+  }
+
+  // names last, above every dot; the hovered one on top of the others
+  const [nameSize, idSize, halo] = compact.value ? [11, 9.5, 3] : [13, 11, 4]
+  const nameFont = `700 ${nameSize}px ${family()}`, idFont = `500 ${idSize}px ${family()}`
+  for (const { s, p } of labelled.value) {
+    const x = p.x + r + 3, y = p.y - r - 1
+    ctx.font = nameFont
+    haloText(ctx, s.name, x, y, c['--foreground'], c['--map-bg'], halo)
+    ctx.font = idFont
+    haloText(ctx, `(S${s.id})`, x + textWidth(s.name + ' ', nameFont), y, c['--muted-foreground'], c['--map-bg'], halo)
+  }
+
+  const rl = ruler.value
+  if (rl) {
+    if (rl.pb) {
+      ctx.beginPath(); ctx.moveTo(rl.pa.x, rl.pa.y); ctx.lineTo(rl.pb.x, rl.pb.y)
+      ctx.strokeStyle = c['--map-bg']; ctx.lineWidth = 6; ctx.stroke() // a halo, for lines of the same color
+      ctx.setLineDash([5, 4]); ctx.strokeStyle = c['--signal']; ctx.lineWidth = 2; ctx.stroke()
+      ctx.setLineDash([])
+    }
+    for (const e of rl.pb ? [rl.pa, rl.pb] : [rl.pa]) {
+      circle(ctx, e.x, e.y, 4)
+      ctx.fillStyle = c['--signal']; ctx.fill()
+      ctx.strokeStyle = c['--map-bg']; ctx.lineWidth = 2; ctx.stroke()
+    }
+    if (rl.mid) {
+      ctx.font = `700 12px ${monoFamily()}`
+      ctx.textAlign = 'center'
+      haloText(ctx, rl.label, rl.mid.x, rl.mid.y - 8, c['--signal'], c['--map-bg'], 4)
+      ctx.textAlign = 'start'
+    }
+  }
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  drawGridLabels(ctx, c, grid)
+}
+
+// paints after Vue's updates, once per change of anything draw() reads
+watchEffect(draw, { flush: 'post' })
+
+const cursor = computed(() => panning.value ? 'grabbing'
+  : measure.on && !readonly ? 'crosshair'
+  : hovered.value === null ? 'grab'
+  : !readonly && selection.value === hovered.value ? 'move' : 'pointer')
+const tooltip = computed(() => {
+  const s = hovered.value === null ? undefined : stations.value.find(({ s }) => s.id === hovered.value)?.s
+  return s ? `${s.name} (S${s.id})  x=${round6(s.x)} y=${round6(s.y)}` : undefined
+})
 </script>
 
 <template>
-  <svg
-    ref="svg" class="map block size-full touch-none select-none"
-    :class="[panning ? 'cursor-grabbing' : measure.on && !readonly ? 'cursor-crosshair' : 'cursor-grab', showsExpected && 'expected']"
-    @pointerdown="onPointerDown" @pointermove="onPointerMove" @pointerup="onPointerUp"
-    @pointercancel="onPointerCancel" @pointerleave="hovered = null; readonly || (cursorText = '')" @wheel.prevent="onWheel" @dblclick="onDblClick"
-  >
-    <g>
-      <template v-for="g in grid.xs" :key="'x' + g.i">
-        <line :x1="g.pos" y1="0" :x2="g.pos" :y2="size.h" :class="g.i === 0 ? 'grid-axis' : 'grid-line'" />
-        <text :x="g.pos + 3" :y="size.h - 5" class="grid-label">{{ g.label }}</text>
-      </template>
-      <template v-for="g in grid.ys" :key="'y' + g.i">
-        <line x1="0" :y1="g.pos" :x2="size.w" :y2="g.pos" :class="g.i === 0 ? 'grid-axis' : 'grid-line'" />
-        <text x="4" :y="g.pos - 4" class="grid-label">{{ g.label }}</text>
-      </template>
-    </g>
-
-    <g class="ghost">
-      <path v-for="g in ghostLines" :key="g.line.id" :d="g.d" :stroke="g.line.color || '#555'" class="ghost-line" />
-      <template v-for="{ s, p, x, y, dot } in ghostStations" :key="s.id">
-        <circle v-if="inView(dot)" :cx="p.x" :cy="p.y" :r="ghostR" class="ghost-station" />
-        <text v-if="labelIds.has(GHOST + s.id)" :x="x" :y="y" class="ghost-label">{{ s.name }}</text>
-      </template>
-    </g>
-
-    <g>
-      <circle v-for="(c, i) in actCircles" :key="i" :cx="c.x" :cy="c.y" :r="c.r" class="act-circle" />
-    </g>
-
-    <g>
-      <path
-        v-for="l in lines" :key="l.line.id" :d="l.d" :stroke="l.line.color || '#555'" :stroke-width="l.isTarget ? lineW + 1.5 : lineW"
-        class="line-path" :class="l.isTarget && 'act-target'" opacity="0.9"
-      >
-        <title>{{ l.line.name }} (R{{ l.line.id }})</title>
-      </path>
-    </g>
-
-    <g>
-      <!-- finger-sized hit areas, all below the dots so a dot always wins over a neighbour's -->
-      <template v-if="!markers">
-        <circle v-for="{ s, p } in onScreen" :key="'hit' + s.id" :cx="p.x" :cy="p.y" r="16" class="station-hit" :class="!readonly && selection === s.id && 'selected'" :data-station-id="s.id" />
-      </template>
-      <template v-for="{ s, p } in onScreen" :key="s.id">
-        <circle v-if="act?.ringStationIds.has(s.id)" :cx="p.x" :cy="p.y" :r="dotR + 6" class="act-ring" />
-        <circle
-          :cx="p.x" :cy="p.y" :r="dotR" :data-station-id="markers ? undefined : s.id" class="station-dot"
-          :class="{ selected: !readonly && selection === s.id, 'act-target': act?.ringStationIds.has(s.id), picking: !readonly && pickLine, small: dotR < 5, marker: markers }"
-        >
-          <title>{{ s.name }} (S{{ s.id }})  x={{ round6(s.x) }} y={{ round6(s.y) }}</title>
-        </circle>
-      </template>
-    </g>
-
-    <!-- names in a pass of their own, above every dot; the hovered one last, on top of the others -->
-    <g>
-      <text v-for="{ s, p } in labelled" :key="s.id" :x="p.x + dotR + 3" :y="p.y - dotR - 1" class="station-label" :class="compact && 'compact'">
-        {{ s.name }} <tspan class="station-id">(S{{ s.id }})</tspan>
-      </text>
-    </g>
-
-    <!-- last, so stations and their names never hide it (it ignores the pointer) -->
-    <g v-if="ruler" class="ruler">
-      <template v-if="ruler.pb">
-        <line :x1="ruler.pa.x" :y1="ruler.pa.y" :x2="ruler.pb.x" :y2="ruler.pb.y" class="ruler-halo" />
-        <line :x1="ruler.pa.x" :y1="ruler.pa.y" :x2="ruler.pb.x" :y2="ruler.pb.y" class="ruler-line" />
-      </template>
-      <circle :cx="ruler.pa.x" :cy="ruler.pa.y" r="4" class="ruler-end" />
-      <circle v-if="ruler.pb" :cx="ruler.pb.x" :cy="ruler.pb.y" r="4" class="ruler-end" />
-      <text v-if="ruler.mid" :x="ruler.mid.x" :y="ruler.mid.y - 8" text-anchor="middle" class="ruler-label">{{ ruler.label }}</text>
-    </g>
-  </svg>
+  <div ref="box" class="map relative size-full touch-none select-none" :class="showsExpected && 'expected'">
+    <canvas
+      ref="canvas" class="absolute inset-0 block size-full" :style="{ cursor }" :title="tooltip"
+      @pointerdown="onPointerDown" @pointermove="onPointerMove" @pointerup="onPointerUp"
+      @pointercancel="onPointerCancel" @pointerleave="hovered = null; readonly || (cursorText = '')" @wheel.prevent="onWheel" @dblclick="onDblClick"
+    />
+    <!-- reads the theme's colors for the canvas -->
+    <span ref="probe" class="hidden" aria-hidden="true" />
+  </div>
 </template>
 
 <style scoped>
-/* plain CSS is still the simplest way to style SVG; colors come from theme tokens */
+/* the colors come from theme tokens (read by draw() through the probe) */
 .map { background: var(--map-bg); }
 /* the Expected model's map is tinted with the blue that marks "Expected" elsewhere,
    so the two tabs can't be mistaken for each other at a glance */
@@ -490,47 +673,4 @@ function onDblClick(ev: MouseEvent) {
   --grid: color-mix(in oklch, var(--signal) calc(var(--expected-tint) * 2.5), var(--background));
   --grid-axis: color-mix(in oklch, var(--signal) calc(var(--expected-tint) * 6), var(--background));
 }
-.grid-line { stroke: var(--grid); stroke-width: 1; }
-.grid-axis { stroke: var(--grid-axis); stroke-width: 1.5; }
-.grid-label { fill: var(--grid-label); font-size: 10.5px; font-family: var(--font-mono); }
-
-.ghost { pointer-events: none; opacity: .35; }
-.ghost-line { fill: none; stroke-width: 3; stroke-dasharray: 6 4; stroke-linecap: round; stroke-linejoin: round; }
-.ghost-station { fill: none; stroke: var(--foreground); stroke-width: 1.5; }
-.ghost-label { fill: var(--foreground); font-size: 11px; font-style: italic; }
-
-.act-circle { fill: color-mix(in oklch, var(--destructive) 7%, transparent); stroke: var(--destructive); stroke-dasharray: 6 5; stroke-width: 1.5; }
-.act-ring { fill: none; stroke: var(--destructive); stroke-width: 2; stroke-dasharray: 3 3; }
-
-.line-path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
-.line-path.act-target { filter: drop-shadow(0 0 3px color-mix(in oklch, var(--destructive) 80%, transparent)); }
-
-.ruler { pointer-events: none; }
-/* the halo keeps the ruler readable on top of a line of the same color */
-.ruler-halo { stroke: var(--map-bg); stroke-width: 6; stroke-linecap: round; }
-.ruler-line { stroke: var(--signal); stroke-width: 2; stroke-dasharray: 5 4; }
-.ruler-end { fill: var(--signal); stroke: var(--map-bg); stroke-width: 2; }
-.ruler-label {
-  fill: var(--signal); font-size: 12px; font-weight: 700; font-family: var(--font-mono);
-  paint-order: stroke; stroke: var(--map-bg); stroke-width: 4px;
-}
-
-.station-hit { fill: transparent; cursor: pointer; }
-.station-hit.selected, .station-dot.selected { cursor: move; }
-.cursor-crosshair .station-hit, .cursor-crosshair .station-dot { cursor: crosshair; }
-.station-dot { fill: var(--map-bg); stroke: var(--foreground); stroke-width: 2.5; cursor: pointer; }
-.station-dot:hover, .station-dot.picking:hover { fill: var(--signal); }
-.station-dot.selected { fill: var(--signal); stroke: var(--foreground); stroke-width: 3; }
-.station-dot.small { stroke-width: 1.75; }
-.station-dot.marker { fill: var(--foreground); stroke: none; pointer-events: none; }
-.station-dot.marker.selected { fill: var(--signal); }
-.station-dot.marker.act-target { fill: var(--destructive); }
-.station-dot.act-target { stroke: var(--destructive); }
-.station-label {
-  fill: var(--foreground); font-size: 13px; font-weight: 700; pointer-events: none;
-  paint-order: stroke; stroke: var(--map-bg); stroke-width: 4px;
-}
-.station-id { fill: var(--muted-foreground); font-weight: 500; font-size: 11px; }
-.station-label.compact { font-size: 11px; stroke-width: 3px; }
-.station-label.compact .station-id { font-size: 9.5px; }
 </style>

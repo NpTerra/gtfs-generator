@@ -12,11 +12,11 @@ export const SCALE_MAX = 400
 
 export const clampScale = (s: number) => Math.max(SCALE_MIN, Math.min(SCALE_MAX, s))
 
-// A camera: center + zoom, and the size of the svg it draws into. The editor's
+// A camera: center + zoom, and the size of the map it draws into. The editor's
 // map uses the main one below; the compare view makes one per map.
 export function createViewport() {
   const view = reactive({ cx: 10, cy: 0, scale: 18 }) // world center + px per meter
-  const size = reactive({ w: 0, h: 0 }) // svg size in px, kept up to date by MapView
+  const size = reactive({ w: 0, h: 0 }) // map size in px, kept up to date by MapView
 
   function worldToScreen(x: number, y: number) {
     return { x: (x - view.cx) * view.scale + size.w / 2, y: (view.cy - y) * view.scale + size.h / 2 }

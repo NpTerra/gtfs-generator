@@ -84,7 +84,7 @@ The editor is styled after JetBrains IDEs (IntelliJ IDEA 2025.3+): rounded tool-
 | Shared state without a library ("store") | `src/composables/useEditor.ts` (module-level `ref`s), `useProject.ts` (projects and files on top of it) |
 | Watchers, debouncing, undo history (VueUse) | `useEditor.ts`: `watchDebounced`, `useManualRefHistory` |
 | Template refs and `defineExpose` | `MapPane.vue` calls `map.fit()` exposed by `MapView.vue` |
-| Rendering SVG declaratively | `MapView.vue`: everything drawn is `computed` from the store |
+| Drawing on a canvas from reactive state | `MapView.vue`: what to draw is `computed` from the store; `draw()` runs in a `watchEffect` |
 | Promise-based dialog | `useConfirm.ts` + `ConfirmDialog.vue`: `if (await confirmDialog('…'))` |
 | Owning shadcn code | `src/components/ui/` is generated code you can edit; `resizable/ResizablePanel.vue` has a local fix |
 

@@ -11,6 +11,7 @@ import * as gtfs from '../src/lib/gtfs'
 import { placeLabels } from '../src/lib/labels'
 import { t } from '../src/lib/i18n'
 import * as M from '../src/lib/model'
+import { secondNearest } from '../src/lib/spacing'
 import * as submission from '../src/lib/submission'
 import * as zip from '../src/lib/zip'
 
@@ -122,6 +123,35 @@ it('map labels: overlapping ones are dropped, by priority', () => {
   expect(shown(at(1, 0, 0), at(2, 40, 12, 3))).toEqual([2]) // …unless the other is the selected station
   expect(shown(at(1, 0, 0), at(2, 50, 0))).toEqual([2]) // 1's label would cover 2's dot
   expect(shown(at(1, 0, 0, 3), at(2, 50, 0))).toEqual([1]) // a selected station's label may cover dots
+  expect([...placeLabels([at(1, 0, 0)], [at(9, 40, 12).box])]).toEqual([]) // an earlier pass's name blocks it
+})
+
+it('map spacing: second nearest station, as a brute force finds it', () => {
+  let seed = 7
+  const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647
+  // a dense cluster, a sparse ring around it and a far loner
+  const pts = [
+    ...Array.from({ length: 300 }, (_, i) => ({ id: i, x: rnd() * 50, y: rnd() * 50 })),
+    ...Array.from({ length: 40 }, (_, i) => ({ id: 300 + i, x: 1000 * Math.cos(i), y: 1000 * Math.sin(i) })),
+    { id: 999, x: 90_000, y: -40_000 },
+  ]
+  const found = secondNearest(pts)
+  for (const p of pts) {
+    const d = pts.filter(q => q !== p).map(q => Math.hypot(q.x - p.x, q.y - p.y)).sort((a, b) => a - b)
+    expect(found.get(p.id)).toBeCloseTo(d[1], 9)
+  }
+  expect(secondNearest([{ id: 1, x: 0, y: 0 }, { id: 2, x: 5, y: 0 }]).get(1)).toBe(Infinity)
+  // stations along a line (one a hair off it) and a city far from a stray stop at 0,0
+  const line = [...Array.from({ length: 200 }, (_, i) => ({ id: i, x: i * 10, y: 0 })), { id: 200, x: 5, y: 0.01 }]
+  const city = [...Array.from({ length: 3000 }, (_, i) => ({ id: i, x: 1.4e6 + rnd() * 20_000, y: 5.2e6 + rnd() * 20_000 })), { id: 3000, x: 0, y: 0 }]
+  for (const pts of [line, city]) {
+    const t0 = performance.now(), found = secondNearest(pts), ms = performance.now() - t0
+    expect(ms).toBeLessThan(200)
+    for (const p of pts.slice(0, 50).concat(pts.at(-1)!)) {
+      const d = pts.filter(q => q !== p).map(q => Math.hypot(q.x - p.x, q.y - p.y)).sort((a, b) => a - b)
+      expect(found.get(p.id)).toBeCloseTo(d[1], 6)
+    }
+  }
 })
 
 it('act.txt split/join keeps field positions', () => {

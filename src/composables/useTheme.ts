@@ -8,3 +8,5 @@ const mode = useColorMode({ storageKey: 'gtfs-editor-theme' })
 
 // what the user picked ('auto' = follow the system)
 export const themeChoice = mode.store
+// what's showing ('light' or 'dark'), for code that draws with the theme's colors
+export const themeShown = mode

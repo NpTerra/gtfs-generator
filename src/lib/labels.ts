@@ -14,8 +14,9 @@ function cells(b: Box, each: (key: string) => void) {
 
 const overlaps = (a: Box, b: Box) => a.x1 < b.x2 && b.x1 < a.x2 && a.y1 < b.y2 && b.y1 < a.y2
 
-// ids of the labels to show; higher priority first, then in the given order
-export function placeLabels(candidates: LabelCandidate[]): Set<number> {
+// ids of the labels to show; higher priority first, then in the given order.
+// `taken`: boxes already drawn (e.g. an earlier pass's names) that block every label.
+export function placeLabels(candidates: LabelCandidate[], taken: Box[] = []): Set<number> {
   const grid = new Map<string, { id: number; box: Box }[]>()
   const add = (id: number, box: Box) => cells(box, key => {
     const list = grid.get(key)
@@ -30,6 +31,7 @@ export function placeLabels(candidates: LabelCandidate[]): Set<number> {
     return hit
   }
 
+  for (const b of taken) add(Number.MIN_SAFE_INTEGER, b) // like a placed label: blocks everyone
   for (const c of candidates) if (c.dot) add(c.id, c.dot) // every dot is an obstacle, except to its own label
   const shown = new Set<number>()
   const order = candidates.map((c, i) => ({ c, i })).sort((a, b) => b.c.priority - a.c.priority || a.i - b.i)

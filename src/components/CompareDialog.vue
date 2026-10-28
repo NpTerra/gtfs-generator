@@ -32,8 +32,8 @@ const sides = computed(() => [
 
 <template>
   <Dialog v-model:open="open">
-    <!-- The panel resize bars behind the dialog listen on the whole page and only see
-         that something covers them when it's HTML, not the maps' SVG: keep the mouse to us -->
+    <!-- The panel resize bars behind the dialog listen on the whole page (and only see
+         that something covers them when it's HTML, not SVG): keep the mouse to us -->
     <DialogContent
       class="flex h-[85dvh] flex-col gap-3 sm:max-w-[min(95vw,1600px)]"
       @mousedown.stop @mousemove.stop @touchstart.stop @touchmove.stop
