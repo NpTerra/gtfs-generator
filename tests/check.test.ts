@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import * as acts from '../src/lib/acts'
 import * as csv from '../src/lib/csv'
 import * as gtfs from '../src/lib/gtfs'
+import { placeLabels } from '../src/lib/labels'
 import { t } from '../src/lib/i18n'
 import * as M from '../src/lib/model'
 import * as submission from '../src/lib/submission'
@@ -108,6 +109,19 @@ it('limits: oversized test cases get warnings (only an overlong name is an error
   const tc = M.defaultTestCase()
   expect(M.toJSON(tc, 0)).not.toContain('\n')
   expect(M.fromJSON(M.toJSON(tc, 0))).toEqual(M.fromJSON(M.toJSON(tc)))
+})
+
+it('map labels: overlapping ones are dropped, by priority', () => {
+  // a station at (x, y) with a 100 px wide label to its upper right
+  const at = (id: number, x: number, y: number, priority = 1) => ({
+    id, priority, box: { x1: x + 10, y1: y - 12, x2: x + 110, y2: y + 4 }, dot: { x1: x - 8, y1: y - 8, x2: x + 8, y2: y + 8 },
+  })
+  const shown = (...c: ReturnType<typeof at>[]) => [...placeLabels(c)].sort()
+  expect(shown(at(1, 0, 0), at(2, 300, 0))).toEqual([1, 2]) // far apart: both
+  expect(shown(at(1, 0, 0), at(2, 40, 12))).toEqual([1]) // the labels overlap: the first one stays
+  expect(shown(at(1, 0, 0), at(2, 40, 12, 3))).toEqual([2]) // …unless the other is the selected station
+  expect(shown(at(1, 0, 0), at(2, 50, 0))).toEqual([2]) // 1's label would cover 2's dot
+  expect(shown(at(1, 0, 0, 3), at(2, 50, 0))).toEqual([1]) // a selected station's label may cover dots
 })
 
 it('act.txt split/join keeps field positions', () => {

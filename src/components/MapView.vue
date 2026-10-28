@@ -10,7 +10,8 @@ import {
   addStation, canEdit, clickStation, editableModel, loadCount, pickLine, selection, tab, tc,
 } from '@/composables/useEditor'
 import { measure, measureClick, measured } from '@/composables/useMeasure'
-import { clampScale, cursorText, mainViewport, showArrangeGhost, type Viewport } from '@/composables/useViewport'
+import { clampScale, cursorText, labelMode, mainViewport, showArrangeGhost, type Viewport } from '@/composables/useViewport'
+import { type Box, placeLabels } from '@/lib/labels'
 import { computeAct } from '@/lib/acts'
 import { xyToGPS } from '@/lib/geo'
 import type { Model } from '@/lib/model'
@@ -57,36 +58,172 @@ function screenPoints(m: Model, stopIds: number[]) {
   return stopIds.map(id => byId.get(id)).filter(s => s !== undefined).map(s => worldToScreen(s.x, s.y))
 }
 
+// Lines sharing a stretch between two stations are drawn side by side, each
+// shifted by its rank among the lines on that stretch only (a line alone on a
+// stretch stays on it). The shift's side comes from the station pair in id
+// order, so it doesn't flip with a line's direction of travel.
+// ---- what's in view: only things with no part on screen are skipped -------------------
+// The margin is larger than a station's biggest drawn extent (its 16 px click
+// area, its act ring), so nothing pops into existence at the edges.
+const CULL = 32 // px
+const inView = (b: Box) => b.x2 > -CULL && b.x1 < size.w + CULL && b.y2 > -CULL && b.y1 < size.h + CULL
+const around = (p: { x: number; y: number }, r: number): Box => ({ x1: p.x - r, y1: p.y - r, x2: p.x + r, y2: p.y + r })
+// a stretch's bounding box, widened by its side shift and line width (glow included)
+const stretchInView = (a: { x: number; y: number }, b: { x: number; y: number }, pad: number) =>
+  inView({ x1: Math.min(a.x, b.x) - pad, y1: Math.min(a.y, b.y) - pad, x2: Math.max(a.x, b.x) + pad, y2: Math.max(a.y, b.y) + pad })
+
+const pairKey = (a: number, b: number) => a < b ? `${a}-${b}` : `${b}-${a}`
+// the drawable lines with their stations, and which lines share each stretch;
+// only changes with the model, not on every pan frame
+const network = computed(() => {
+  if (!model.value) return null
+  const byId = new Map(model.value.stations.map(s => [s.id, s]))
+  const drawable = model.value.lines.map(line => ({
+    line, stops: line.stops.map(st => byId.get(st.stationId)).filter(s => s !== undefined),
+  })).filter(d => d.stops.length >= 2)
+  const sharing = new Map<string, number[]>() // stretch -> ids of the lines on it, in line order
+  for (const { line, stops } of drawable) {
+    for (let i = 0; i < stops.length - 1; i++) {
+      const on = sharing.get(pairKey(stops[i].id, stops[i + 1].id)) ?? []
+      if (!on.includes(line.id)) on.push(line.id)
+      sharing.set(pairKey(stops[i].id, stops[i + 1].id), on)
+    }
+  }
+
+  return { drawable, sharing }
+})
+
 const lines = computed(() => {
-  if (!model.value) return []
-  const m = model.value
-  const drawable = m.lines
-    .map(line => ({ line, pts: screenPoints(m, line.stops.map(st => st.stationId)) }))
-    .filter(d => d.pts.length >= 2)
-  return drawable.map(({ line, pts }, idx) => {
-    // per-line perpendicular offset so overlapping lines stay visible
-    const offset = (idx - (drawable.length - 1) / 2) * 3.5
+  if (!network.value) return []
+  const { drawable, sharing } = network.value
+  return drawable.map(({ line, stops }) => {
     let d = ''
-    for (let i = 0; i < pts.length - 1; i++) {
-      const a = pts[i], b = pts[i + 1]
-      const len = Math.hypot(b.x - a.x, b.y - a.y) || 1
-      const nx = -(b.y - a.y) / len * offset, ny = (b.x - a.x) / len * offset
+    for (let i = 0; i < stops.length - 1; i++) {
+      const on = sharing.get(pairKey(stops[i].id, stops[i + 1].id))!
+      // side by side, but the whole bundle never gets wider than a dot (they overlap instead)
+      const offset = (on.indexOf(line.id) - (on.length - 1) / 2) * Math.min(lineW.value, 2 * dotR.value / on.length)
+      const a = worldToScreen(stops[i].x, stops[i].y), b = worldToScreen(stops[i + 1].x, stops[i + 1].y)
+      if (!stretchInView(a, b, Math.abs(offset) + 8)) continue
+      const [lo, hi] = stops[i].id < stops[i + 1].id ? [a, b] : [b, a]
+      const len = Math.hypot(hi.x - lo.x, hi.y - lo.y) || 1
+      const nx = -(hi.y - lo.y) / len * offset, ny = (hi.x - lo.x) / len * offset
       d += `M ${a.x + nx} ${a.y + ny} L ${b.x + nx} ${b.y + ny} `
     }
     const names = act.value?.lineNames
     const isTarget = !!names && (names.has(line.shortName.toLowerCase()) || names.has(line.name.toLowerCase()))
     return { line, d, isTarget }
-  })
+  }).filter(l => l.d)
 })
 
 const ghostLines = computed(() => ghost.value
   ? ghost.value.lines
     .map(line => ({ line, pts: screenPoints(ghost.value!, line.stops.map(st => st.stationId)) }))
-    .filter(d => d.pts.length >= 2)
-    .map(d => ({ ...d, points: d.pts.map(p => `${p.x},${p.y}`).join(' ') }))
+    .map(({ line, pts }) => ({
+      line, d: pts.slice(1).map((b, i) => stretchInView(pts[i], b, 4) ? `M ${pts[i].x} ${pts[i].y} L ${b.x} ${b.y} ` : '').join(''),
+    }))
+    .filter(g => g.d)
   : [])
 
 const stations = computed(() => (model.value?.stations ?? []).map(s => ({ s, p: worldToScreen(s.x, s.y) })))
+
+// ---- crowded maps: smaller dots, and only the names that fit ----------------------------
+
+const onScreen = computed(() => stations.value.filter(({ p }) => inView(around(p, 16)))) // dot, ring or click area
+// the average room each station on screen has, in px
+// How close stations on screen are: the median distance to the second nearest
+// other one, in px (along a line: the next stop; the nearest is often the same
+// stop's other platform). A grid of buckets finds it; beyond a bucket's reach
+// counts as roomy. An average over the screen's area would be fooled by the
+// empty space between lines.
+const nearest = computed(() => {
+  const CELL = 40
+  const pts = onScreen.value.map(({ p }) => p)
+  const grid = new Map<string, { x: number; y: number }[]>()
+  const key = (x: number, y: number) => Math.floor(x / CELL) + ':' + Math.floor(y / CELL)
+  for (const p of pts) {
+    const list = grid.get(key(p.x, p.y))
+    if (list) list.push(p); else grid.set(key(p.x, p.y), [p])
+  }
+  const dists = pts.map((p) => {
+    let first = CELL, second = CELL
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dy = -1; dy <= 1; dy++)
+        for (const q of grid.get(key(p.x + dx * CELL, p.y + dy * CELL)) ?? []) {
+          if (q === p) continue
+          const d = Math.hypot(q.x - p.x, q.y - p.y)
+          if (d < first) [first, second] = [d, first]
+          else if (d < second) second = d
+        }
+    return second
+  }).sort((a, b) => a - b)
+  return dists.length > 1 ? dists[dists.length >> 1] : CELL
+})
+const dotR = computed(() => Math.max(1.5, Math.min(7, nearest.value / 5)))
+// packed too tight to point at one: plain markers, no clicking, hovering or dragging (zoom in for that)
+const markers = computed(() => dotR.value < 3)
+const lineW = computed(() => Math.max(1, Math.min(3.5, dotR.value / 2)))
+const compact = computed(() => nearest.value < 30) // smaller label text too
+const hovered = ref<number | null>(null) // its name is shown even where it doesn't fit
+
+let measureCtx: CanvasRenderingContext2D | null = null
+let fontFamily = ''
+const family = () => fontFamily ||= getComputedStyle(document.documentElement).getPropertyValue('--font-sans') || 'sans-serif'
+const widths = new Map<string, number>()
+function textWidth(text: string, font: string) {
+  const key = font + '|' + text
+  let w = widths.get(key)
+  if (w === undefined) {
+    measureCtx ??= document.createElement('canvas').getContext('2d')
+    if (measureCtx) measureCtx.font = font
+    w = measureCtx?.measureText(text).width ?? text.length * 7
+    widths.set(key, w)
+  }
+  return w
+}
+
+// every station's name and dot boxes; a name can reach the screen from a station just off it
+const labelBoxes = computed(() => {
+  const r = dotR.value
+  const [nameSize, idSize] = compact.value ? [11, 9.5] : [13, 11]
+  return stations.value.map(({ s, p }) => {
+    const w = textWidth(s.name + ' ', `700 ${nameSize}px ${family()}`) + textWidth(`(S${s.id})`, `500 ${idSize}px ${family()}`)
+    const x = p.x + r + 3, y = p.y - r - 1 // the text's start and baseline
+    return {
+      s, p,
+      box: { x1: x - 2, y1: y - nameSize - 1, x2: x + w + 2, y2: y + 4 },
+      dot: { x1: p.x - r - 1, y1: p.y - r - 1, x2: p.x + r + 1, y2: p.y + r + 1 },
+    }
+  }).filter(l => inView(l.box) || inView(l.dot))
+})
+
+// the faded Arrange stations on the Expected tab: smaller, names below in italics
+const GHOST = 1e9 // their label ids, apart from the model's station ids
+const ghostR = computed(() => Math.min(5, dotR.value))
+const ghostStations = computed(() => (ghost.value?.stations ?? []).map(s => {
+  const p = worldToScreen(s.x, s.y), r = ghostR.value
+  const x = p.x + r + 3, y = p.y + r + 9
+  const w = textWidth(s.name, `italic 400 11px ${family()}`)
+  return { s, p, x, y, box: { x1: x - 2, y1: y - 11, x2: x + w + 2, y2: y + 3 }, dot: around(p, r + 1) }
+}).filter(g => inView(g.box) || inView(g.dot)))
+
+// the ids of the names drawn (faded ones as GHOST + id); the faded ones come last
+const labelIds = computed<Set<number>>(() => {
+  if (labelMode.value === 'none') return new Set()
+  const all = [
+    ...labelBoxes.value.map(({ s, box, dot }) => ({
+      id: s.id, box, dot,
+      priority: !readonly && selection.value === s.id ? 3 : act.value?.ringStationIds.has(s.id) ? 2 : 1,
+    })),
+    ...ghostStations.value.map(({ s, box }) => ({ id: GHOST + s.id, box, priority: 0 })), // faded dots block no names
+  ]
+  if (labelMode.value === 'all') return new Set(all.filter(l => inView(l.box)).map(l => l.id))
+  return placeLabels(all)
+})
+const labelled = computed(() => {
+  const shown = stations.value.filter(({ s }) => s.id !== hovered.value && labelIds.value.has(s.id))
+  const top = stations.value.find(({ s }) => s.id === hovered.value)
+  return top ? [...shown, top] : shown
+})
 
 // the measure tool's line, in screen coordinates, with its label in the middle
 const ruler = computed(() => {
@@ -99,7 +236,9 @@ const ruler = computed(() => {
 function formatDistance(m: number) {
   return m >= 1000 ? `${(m / 1000).toFixed(3)} km` : `${Number(m.toFixed(3))} m`
 }
-const ghostStations = computed(() => (ghost.value?.stations ?? []).map(s => ({ s, p: worldToScreen(s.x, s.y) })))
+const actCircles = computed(() => (act.value?.circles ?? [])
+  .map(c => ({ ...worldToScreen(c.x, c.y), r: c.r * view.scale }))
+  .filter(c => inView(around(c, c.r + 2))))
 
 // ---- camera: fit on load, keep visible on tab switch ----------------------------------
 
@@ -164,11 +303,11 @@ function onPointerDown(ev: PointerEvent) {
   const station = id !== null && canEdit.value && !readonly ? findStation(id) : undefined
   if (measure.on && !readonly) { // measuring: drags pan, a click (on pointer up) sets a point
     drag = { type: 'pan', startX: pt.x, startY: pt.y, cx: view.cx, cy: view.cy, stationId: station?.id }
-  } else if (station) {
+  } else if (station && selection.value === station.id) { // only the selected station moves, so a pan can't
     const w = screenToWorld(pt.x, pt.y)
     drag = { type: 'station', id: station.id, origX: station.x, origY: station.y, offX: station.x - w.x, offY: station.y - w.y, moved: false }
   } else {
-    drag = { type: 'pan', startX: pt.x, startY: pt.y, cx: view.cx, cy: view.cy }
+    drag = { type: 'pan', startX: pt.x, startY: pt.y, cx: view.cx, cy: view.cy, stationId: station?.id }
     panning.value = true
   }
   svg.value!.setPointerCapture(ev.pointerId)
@@ -187,6 +326,7 @@ function onPointerMove(ev: PointerEvent) {
   }
   const pt = eventPoint(ev)
   const w = screenToWorld(pt.x, pt.y)
+  if (!drag) hovered.value = stationAt(ev)
   if (!readonly) try {
     const gps = xyToGPS(w.x, w.y)
     cursorText.value = `x ${w.x.toFixed(1)}  y ${w.y.toFixed(1)}   lat ${gps.lat.toFixed(6)}  lon ${gps.lon.toFixed(6)}`
@@ -232,9 +372,11 @@ function liftPointer(ev: PointerEvent) {
 function onPointerUp(ev: PointerEvent) {
   if (liftPointer(ev)) return
   if (drag?.type === 'station' && !drag.moved) clickStation(drag.id)
-  if (drag?.type === 'pan' && measure.on && !readonly) {
-    const pt = eventPoint(ev)
-    if (Math.hypot(pt.x - drag.startX, pt.y - drag.startY) < 4) measureClick({ ...screenToWorld(pt.x, pt.y), stationId: drag.stationId })
+  const pt = eventPoint(ev)
+  if (drag?.type === 'pan' && Math.hypot(pt.x - drag.startX, pt.y - drag.startY) < 4) { // a click, not a pan
+    if (measure.on && !readonly) measureClick({ ...screenToWorld(pt.x, pt.y), stationId: drag.stationId })
+    else if (drag.stationId !== undefined) clickStation(drag.stationId)
+    else if (!readonly) selection.value = null
   }
   drag = null
   panning.value = false
@@ -268,7 +410,7 @@ function onDblClick(ev: MouseEvent) {
     ref="svg" class="map block size-full touch-none select-none"
     :class="[panning ? 'cursor-grabbing' : measure.on && !readonly ? 'cursor-crosshair' : 'cursor-grab', showsExpected && 'expected']"
     @pointerdown="onPointerDown" @pointermove="onPointerMove" @pointerup="onPointerUp"
-    @pointercancel="onPointerCancel" @pointerleave="readonly || (cursorText = '')" @wheel.prevent="onWheel" @dblclick="onDblClick"
+    @pointercancel="onPointerCancel" @pointerleave="hovered = null; readonly || (cursorText = '')" @wheel.prevent="onWheel" @dblclick="onDblClick"
   >
     <g>
       <template v-for="g in grid.xs" :key="'x' + g.i">
@@ -282,20 +424,20 @@ function onDblClick(ev: MouseEvent) {
     </g>
 
     <g class="ghost">
-      <polyline v-for="g in ghostLines" :key="g.line.id" :points="g.points" :stroke="g.line.color || '#555'" class="ghost-line" />
-      <template v-for="{ s, p } in ghostStations" :key="s.id">
-        <circle :cx="p.x" :cy="p.y" r="5" class="ghost-station" />
-        <text :x="p.x + 8" :y="p.y + 14" class="ghost-label">{{ s.name }}</text>
+      <path v-for="g in ghostLines" :key="g.line.id" :d="g.d" :stroke="g.line.color || '#555'" class="ghost-line" />
+      <template v-for="{ s, p, x, y, dot } in ghostStations" :key="s.id">
+        <circle v-if="inView(dot)" :cx="p.x" :cy="p.y" :r="ghostR" class="ghost-station" />
+        <text v-if="labelIds.has(GHOST + s.id)" :x="x" :y="y" class="ghost-label">{{ s.name }}</text>
       </template>
     </g>
 
     <g>
-      <circle v-for="(c, i) in act?.circles" :key="i" :cx="worldToScreen(c.x, c.y).x" :cy="worldToScreen(c.x, c.y).y" :r="c.r * view.scale" class="act-circle" />
+      <circle v-for="(c, i) in actCircles" :key="i" :cx="c.x" :cy="c.y" :r="c.r" class="act-circle" />
     </g>
 
     <g>
       <path
-        v-for="l in lines" :key="l.line.id" :d="l.d" :stroke="l.line.color || '#555'" :stroke-width="l.isTarget ? 5 : 3.5"
+        v-for="l in lines" :key="l.line.id" :d="l.d" :stroke="l.line.color || '#555'" :stroke-width="l.isTarget ? lineW + 1.5 : lineW"
         class="line-path" :class="l.isTarget && 'act-target'" opacity="0.9"
       >
         <title>{{ l.line.name }} (R{{ l.line.id }})</title>
@@ -304,17 +446,25 @@ function onDblClick(ev: MouseEvent) {
 
     <g>
       <!-- finger-sized hit areas, all below the dots so a dot always wins over a neighbour's -->
-      <circle v-for="{ s, p } in stations" :key="'hit' + s.id" :cx="p.x" :cy="p.y" r="16" class="station-hit" :data-station-id="s.id" />
-      <template v-for="{ s, p } in stations" :key="s.id">
-        <circle v-if="act?.ringStationIds.has(s.id)" :cx="p.x" :cy="p.y" r="13" class="act-ring" />
+      <template v-if="!markers">
+        <circle v-for="{ s, p } in onScreen" :key="'hit' + s.id" :cx="p.x" :cy="p.y" r="16" class="station-hit" :class="!readonly && selection === s.id && 'selected'" :data-station-id="s.id" />
+      </template>
+      <template v-for="{ s, p } in onScreen" :key="s.id">
+        <circle v-if="act?.ringStationIds.has(s.id)" :cx="p.x" :cy="p.y" :r="dotR + 6" class="act-ring" />
         <circle
-          :cx="p.x" :cy="p.y" r="7" :data-station-id="s.id" class="station-dot"
-          :class="{ selected: !readonly && selection === s.id, 'act-target': act?.ringStationIds.has(s.id), picking: !readonly && pickLine }"
+          :cx="p.x" :cy="p.y" :r="dotR" :data-station-id="markers ? undefined : s.id" class="station-dot"
+          :class="{ selected: !readonly && selection === s.id, 'act-target': act?.ringStationIds.has(s.id), picking: !readonly && pickLine, small: dotR < 5, marker: markers }"
         >
           <title>{{ s.name }} (S{{ s.id }})  x={{ round6(s.x) }} y={{ round6(s.y) }}</title>
         </circle>
-        <text :x="p.x + 10" :y="p.y - 8" class="station-label">{{ s.name }} <tspan class="station-id">(S{{ s.id }})</tspan></text>
       </template>
+    </g>
+
+    <!-- names in a pass of their own, above every dot; the hovered one last, on top of the others -->
+    <g>
+      <text v-for="{ s, p } in labelled" :key="s.id" :x="p.x + dotR + 3" :y="p.y - dotR - 1" class="station-label" :class="compact && 'compact'">
+        {{ s.name }} <tspan class="station-id">(S{{ s.id }})</tspan>
+      </text>
     </g>
 
     <!-- last, so stations and their names never hide it (it ignores the pointer) -->
@@ -366,14 +516,21 @@ function onDblClick(ev: MouseEvent) {
 }
 
 .station-hit { fill: transparent; cursor: pointer; }
+.station-hit.selected, .station-dot.selected { cursor: move; }
 .cursor-crosshair .station-hit, .cursor-crosshair .station-dot { cursor: crosshair; }
 .station-dot { fill: var(--map-bg); stroke: var(--foreground); stroke-width: 2.5; cursor: pointer; }
 .station-dot:hover, .station-dot.picking:hover { fill: var(--signal); }
 .station-dot.selected { fill: var(--signal); stroke: var(--foreground); stroke-width: 3; }
+.station-dot.small { stroke-width: 1.75; }
+.station-dot.marker { fill: var(--foreground); stroke: none; pointer-events: none; }
+.station-dot.marker.selected { fill: var(--signal); }
+.station-dot.marker.act-target { fill: var(--destructive); }
 .station-dot.act-target { stroke: var(--destructive); }
 .station-label {
   fill: var(--foreground); font-size: 13px; font-weight: 700; pointer-events: none;
   paint-order: stroke; stroke: var(--map-bg); stroke-width: 4px;
 }
 .station-id { fill: var(--muted-foreground); font-weight: 500; font-size: 11px; }
+.station-label.compact { font-size: 11px; stroke-width: 3px; }
+.station-label.compact .station-id { font-size: 9.5px; }
 </style>

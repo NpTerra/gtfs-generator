@@ -1,18 +1,21 @@
 <script setup lang="ts">
 // The center of the layout: toolbar (tabs, map tools) + map.
 import {
-  Columns2Icon, LayersIcon, MaximizeIcon, PlusIcon, Redo2Icon, RulerIcon, Undo2Icon,
+  Columns2Icon, LayersIcon, MaximizeIcon, PlusIcon, Redo2Icon, RulerIcon, TagIcon, Undo2Icon,
 } from '@lucide/vue'
 import { ref } from 'vue'
 import CompareDialog from '@/components/CompareDialog.vue'
 import MapView from '@/components/MapView.vue'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   addStation, canEdit, canRedo, canUndo, editableModel, pickLine, pickLineId, redo, setTab, tab, tc, undo,
 } from '@/composables/useEditor'
 import { measure, measured, toggleMeasure } from '@/composables/useMeasure'
-import { freeSpot, showArrangeGhost } from '@/composables/useViewport'
+import { freeSpot, labelMode, showArrangeGhost, type LabelMode } from '@/composables/useViewport'
 import { t } from '@/lib/i18n'
 
 const map = ref<InstanceType<typeof MapView>>()
@@ -46,6 +49,21 @@ function addStationHere() {
         >
           <LayersIcon />
         </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <Button variant="outline" size="icon-sm" :title="`Station names: ${labelMode}`" aria-label="Station names">
+              <TagIcon />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" class="w-64">
+            <DropdownMenuLabel class="text-xs font-semibold text-muted-foreground">Station names</DropdownMenuLabel>
+            <DropdownMenuRadioGroup :model-value="labelMode" @update:model-value="v => (labelMode = v as LabelMode)">
+              <DropdownMenuRadioItem value="auto">Auto <span class="ml-auto text-xs text-muted-foreground">those that fit</span></DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="all">All</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="none">None <span class="ml-auto text-xs text-muted-foreground">hover shows one</span></DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button variant="outline" size="icon-sm" title="Compare Arrange and Expected side by side" aria-label="Compare side by side" @click="comparing = true">
           <Columns2Icon />
         </Button>

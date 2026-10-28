@@ -1,6 +1,7 @@
 // The map's camera (center + zoom) and screen<->world conversion. World
 // coordinates are meters with the Y axis up. The main camera is shared, so the
 // Model panel can place new stations in the middle of what the map shows.
+import { useLocalStorage } from '@vueuse/core'
 import { reactive, ref } from 'vue'
 import type { ActInfo } from '@/lib/acts'
 import type { Model, Station } from '@/lib/model'
@@ -85,6 +86,10 @@ export function freeSpot(stations: Station[]) {
 
 // whether the Expected tab draws the Arrange model faded underneath (a map toolbar toggle)
 export const showArrangeGhost = ref(true)
+
+// station names on the map: only those that fit (auto), every one, or none
+export type LabelMode = 'auto' | 'all' | 'none'
+export const labelMode = useLocalStorage<LabelMode>('gtfs-map-labels', 'auto')
 
 // the map position under the mouse, shown in the status bar
 export const cursorText = ref('')
