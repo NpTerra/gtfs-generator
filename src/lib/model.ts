@@ -127,7 +127,7 @@ export function defaultTestCase(): TestCase {
     version: 1,
     name: 'my_test',
     description: 'Describe what this test verifies.',
-    act: 'CLOSE_AREA\nA;10',
+    act: 'CLOSE_AREA\nA;15', // B (10 m) clearly inside, C (20 m) clearly outside: no boundary case
     agency: {
       name: 'Your Transit Agency',
       url: 'http://www.yourtransitagency.com',

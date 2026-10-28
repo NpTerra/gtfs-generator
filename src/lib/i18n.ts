@@ -63,6 +63,7 @@ const STRINGS: Record<Lang, Record<string, string>> = {
 
     "problems.none": "No problems found.",
 
+    "v.actOnBoundary": "act.txt: station \"{name}\" is exactly {r} m from \"{center}\", on the CLOSE_AREA radius. The grader's XY→GPS→XY conversion can put it on either side; move it clearly inside or outside unless the boundary is the point of the test.",
     "v.dupFileName": "Another test case in this project is also named \"{name}\"; Generate all needs unique names.",
     "v.dupStation": "{label}: duplicate station ID {id}.",
     "v.stationNoName": "{label}: station {id} has no name.",
@@ -146,6 +147,7 @@ const STRINGS: Record<Lang, Record<string, string>> = {
 
     "problems.none": "Nincs talált probléma.",
 
+    "v.actOnBoundary": "act.txt: a(z) „{name}” állomás pontosan {r} m-re van „{center}”-tól, a CLOSE_AREA sugarán. A javító XY→GPS→XY átváltása bármelyik oldalra teheti; tedd egyértelműen belülre vagy kívülre, hacsak nem épp a határ a teszt lényege.",
     "v.dupFileName": "Ebben a projektben egy másik teszteset neve is „{name}”; a Generate all egyedi neveket igényel.",
     "v.dupStation": "{label}: ismétlődő állomás-azonosító: {id}.",
     "v.stationNoName": "{label}: a(z) {id} állomásnak nincs neve.",

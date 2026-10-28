@@ -3,7 +3,9 @@
 //
 // HOW TO ADD A NEW METHOD: add one entry to METHODS. The key is the first line
 // of act.txt (matched in UPPERCASE); `params` describes the ';'-separated
-// second line; `draw` (optional) marks things on the map through `overlay`.
+// second line; `draw` (optional) marks things on the map through `overlay`;
+// `check` (optional) returns extra warnings about the inputs. Both look at the
+// inputs only: what the act produces is the students' job to compute.
 import type { Model } from './model'
 
 export type ParamKind = 'station' | 'line' | 'number' | 'text'
@@ -15,10 +17,17 @@ export interface Overlay {
   highlightLine(lineName: string | undefined): void
 }
 
+export interface ActProblem { key: string; params: Record<string, unknown> }
+
 interface MethodSpec {
   params: ParamSpec[]
   draw?(ctx: { params: string[]; rest: string[]; model: Model; overlay: Overlay }): void
+  check?(ctx: { params: string[]; rest: string[]; model: Model }): ActProblem[]
 }
+
+// The grader converts XY to GPS and back, which moves a point by up to a few
+// nanometres: a station exactly on a radius can land on either side of it.
+export const BOUNDARY_TOLERANCE_M = 0.001
 
 export const METHODS: Record<string, MethodSpec> = {
   CLOSE_AREA: {
@@ -30,6 +39,18 @@ export const METHODS: Record<string, MethodSpec> = {
       overlay.circleAround(params[0], parseFloat(params[1]))
       for (const name of rest.flatMap(line => line.split(';')))
         overlay.highlightLine(name)
+    },
+    check({ params, model }) {
+      const r = parseFloat(params[1])
+      const out: ActProblem[] = []
+      for (const center of model.stations.filter(s => s.name === params[0])) {
+        for (const s of model.stations) {
+          const d = Math.hypot(s.x - center.x, s.y - center.y)
+          if (s !== center && Math.abs(d - r) < BOUNDARY_TOLERANCE_M)
+            out.push({ key: 'v.actOnBoundary', params: { name: s.name, center: center.name, r } })
+        }
+      }
+      return out
     },
   },
 
@@ -75,10 +96,11 @@ export function fields(act: Act): { param: ParamSpec; values: string[] }[] {
   }))
 }
 
-// Act parameters that don't resolve in the model, as i18n keys. Reported as
-// warnings only: invalid-argument tests use such values on purpose.
-export function checkAct(actText: string, model: Model): { key: string; params: Record<string, unknown> }[] {
-  const out: { key: string; params: Record<string, unknown> }[] = []
+// Act parameters that don't resolve in the model, and the method's own input
+// checks, as i18n keys. Reported as warnings only: invalid-argument tests use
+// such values on purpose.
+export function checkAct(actText: string, model: Model): ActProblem[] {
+  const out: ActProblem[] = []
   const stations = new Set(model.stations.map(s => s.name))
   const lines = new Set(model.lines.flatMap(l => [l.shortName, l.name]).map(n => String(n).toLowerCase()))
   for (const { param, values } of fields(split(actText))) {
@@ -90,6 +112,10 @@ export function checkAct(actText: string, model: Model): { key: string; params: 
         out.push({ key: 'v.actNotNumber', params: { label: param.label, value: v } })
     }
   }
+  const act = split(actText)
+  try {
+    out.push(...METHODS[act.method.toUpperCase()]?.check?.({ params: act.params, rest: act.rest, model }) ?? [])
+  } catch { /* a check must never break validation */ }
   return out
 }
 

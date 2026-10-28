@@ -89,9 +89,12 @@ it('act.txt split/join keeps field positions', () => {
   expect(acts.split(acts.join({ method: 'CLOSE_AREA', params: ['', ''], rest: ['L1'] })).rest).toEqual(['L1'])
 
   const keys = (text: string) => acts.checkAct(text, M.defaultTestCase().arrange).map(p => p.key)
-  expect(keys('CLOSE_AREA\nA;10')).toEqual([])
+  expect(keys('CLOSE_AREA\nA;15')).toEqual([])
   expect(keys('CLOSE_AREA\nX;ten')).toEqual(['v.actNoStation', 'v.actNotNumber'])
   expect(keys('DIVERT_LINE\nl1;A;Nope')).toEqual(['v.actNoStation']) // line names match case-insensitively
+  expect(keys(M.defaultTestCase().act)).toEqual([]) // a new test case starts without warnings
+  expect(keys('CLOSE_AREA\nA;20')).toEqual(['v.actOnBoundary']) // C is exactly 20 m from A
+  expect(keys('CLOSE_AREA\nA;20.01')).toEqual([])
 })
 
 it('project files: unique names, Generate all / Export all zips import back', async () => {
