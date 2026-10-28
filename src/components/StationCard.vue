@@ -34,7 +34,7 @@ function setCoord(index: number, raw: string) {
 <template>
   <div
     :id="`station-card-${station.id}`"
-    class="@container flex flex-col gap-1.5 rounded-xl border bg-card p-2"
+    class="@container flex flex-col gap-1.5 rounded-xl border bg-card p-2 lazy-card"
     :class="selection === station.id && 'border-ring bg-selection'"
     @click="selection = station.id"
   >

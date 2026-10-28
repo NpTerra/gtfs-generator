@@ -221,15 +221,19 @@ export function changeCalendarId(model: Model, calendar: Calendar, newId: number
   return true
 }
 
+// the add functions return the new item's id (none at a limit)
 export function addLine(model: Model) {
   if (!hasRoom(model.lines.length, 'lines')) return
   const id = M.nextId(model.lines)
   model.lines.push({ id, name: 'L' + id, shortName: 'L' + id, color: M.LINE_COLORS[(id - 1) % M.LINE_COLORS.length], type: 1, stops: [] })
+  return id
 }
 
 export function addCalendar(model: Model) {
   if (!hasRoom(model.calendars.length, 'calendars')) return
-  model.calendars.push({ id: M.nextId(model.calendars), start: '2025-01-01', end: '2025-12-31', availability: [1, 1, 1, 1, 1, 1, 1] })
+  const id = M.nextId(model.calendars)
+  model.calendars.push({ id, start: '2025-01-01', end: '2025-12-31', availability: [1, 1, 1, 1, 1, 1, 1] })
+  return id
 }
 
 // the expected model may borrow the Arrange calendars when it has none
@@ -241,6 +245,7 @@ export function addTrip(model: Model) {
   if (!hasRoom(model.trips.length, 'trips')) return
   const trip: Trip = { id: M.nextId(model.trips), line: model.lines[0]?.id ?? 1, service: calendarsFor(model)[0]?.id ?? 1 }
   model.trips.push(trip)
+  return trip.id
 }
 
 // replaces the model of one tab (e.g. with routes imported from a GTFS feed); undoable

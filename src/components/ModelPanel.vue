@@ -1,25 +1,30 @@
 <script setup lang="ts">
 // Right panel: the GTFS model of the active tab (Arrange or Expected).
 import { FileInputIcon, PlusIcon, XIcon } from '@lucide/vue'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import CalendarCard from '@/components/CalendarCard.vue'
 import LineCard from '@/components/LineCard.vue'
 import PanelHeader from '@/components/PanelHeader.vue'
+import PagedList from '@/components/PagedList.vue'
 import PanelSection from '@/components/PanelSection.vue'
+import RefSelect from '@/components/RefSelect.vue'
 import StationCard from '@/components/StationCard.vue'
 import IdInput from '@/components/IdInput.vue'
 import { Button } from '@/components/ui/button'
-import { NativeSelect } from '@/components/ui/native-select'
 import {
-  addCalendar, addLine, addStation, addTrip, calendarsFor, canEdit, editableModel, remove, tab, tc,
+  addCalendar, addLine, addStation, addTrip, calendarsFor, canEdit, editableModel, pickLineId, remove, selection, tab, tc,
 } from '@/composables/useEditor'
 import { openGtfsImport } from '@/composables/useGtfsImport'
 import { freeSpot } from '@/composables/useViewport'
 import { t } from '@/lib/i18n'
+import type { Line } from '@/lib/model'
 
 const model = editableModel
 const isExpected = computed(() => tab.value === 'expected')
 const calendars = computed(() => calendarsFor(model.value))
+// a line is also found by the stations it stops at (imported lines are often just numbers)
+const stationNames = computed(() => new Map(model.value.stations.map(st => [st.id, st.name])))
+const lineText = (l: Line) => `${l.shortName} ${l.name} R${l.id} ${l.stops.map(st => stationNames.value.get(st.stationId)).join(' ')}`
 
 const gtfsInput = ref<HTMLInputElement>()
 function onGtfsPicked() {
@@ -32,6 +37,11 @@ function addStationHere() {
   const p = freeSpot(model.value.stations)
   addStation(p.x, p.y)
 }
+
+// a line, calendar or trip just added stays on top of its list (it's appended, so on a long
+// list it would land on the last page; a search could hide it too); a new station is selected
+const added = ref<{ lines?: number; calendars?: number; trips?: number }>({})
+watch(model, () => { added.value = {} })
 </script>
 
 <template>
@@ -58,39 +68,47 @@ function addStationHere() {
       <p v-if="isExpected" class="m-3 mb-1 rounded-lg border border-l-4 border-l-signal bg-field px-3 py-2 text-[13px]">{{ t('pill.expected') }}</p>
 
       <PanelSection id="stations" title="Stations" :count="model.stations.length">
-        <StationCard v-for="s in model.stations" :key="s.id" :station="s" :model="model" />
+        <PagedList v-slot="{ item }" :items="model.stations" :text="s => `${s.name} S${s.id}`" :pinned="selection" noun="stations">
+          <StationCard :station="item" :model="model" />
+        </PagedList>
         <Button variant="outline" size="sm" class="self-start" @click="addStationHere"><PlusIcon /> Add station</Button>
       </PanelSection>
 
       <PanelSection id="lines" title="Lines" :count="model.lines.length">
-        <LineCard v-for="l in model.lines" :key="l.id" :line="l" :model="model" />
-        <Button variant="outline" size="sm" class="self-start" @click="addLine(model)"><PlusIcon /> Add line</Button>
+        <PagedList v-slot="{ item }" :items="model.lines" :text="lineText" :pinned="added.lines ?? pickLineId" noun="lines">
+          <LineCard :line="item" :model="model" />
+        </PagedList>
+        <Button variant="outline" size="sm" class="self-start" @click="added = { lines: addLine(model) }"><PlusIcon /> Add line</Button>
       </PanelSection>
 
       <PanelSection id="calendars" title="Calendars" :count="model.calendars.length">
         <p v-if="isExpected && model.calendars.length === 0" class="text-[13px] text-muted-foreground">{{ t('hint.calendarsInherit') }}</p>
-        <CalendarCard v-for="c in model.calendars" :key="c.id" :calendar="c" :model="model" />
-        <Button variant="outline" size="sm" class="self-start" @click="addCalendar(model)"><PlusIcon /> Add calendar</Button>
+        <PagedList v-slot="{ item }" :items="model.calendars" :text="c => `C${c.id} ${c.start} ${c.end}`" :pinned="added.calendars" noun="calendars">
+          <CalendarCard :calendar="item" :model="model" />
+        </PagedList>
+        <Button variant="outline" size="sm" class="self-start" @click="added = { calendars: addCalendar(model) }"><PlusIcon /> Add calendar</Button>
       </PanelSection>
 
       <PanelSection id="trips" title="Trips" :count="model.trips.length">
         <p class="text-[13px] text-muted-foreground">{{ t('hint.trips') }}</p>
         <!-- id | line | calendar | delete; the two selects wrap under each other when narrow -->
-        <div v-for="trip in model.trips" :key="trip.id" class="flex flex-wrap items-center gap-1.5 rounded-xl border bg-card p-2">
-          <IdInput :id="trip.id" prefix="T" label="Trip ID" :on-change-id="id => (trip.id = id, true)" />
-          <NativeSelect v-model.number="trip.line" class="min-w-[7rem] flex-1" title="Line" aria-label="Line">
-            <option v-for="l in model.lines" :key="l.id" :value="l.id">{{ l.name }} (R{{ l.id }})</option>
-            <option v-if="!model.lines.some(l => l.id === trip.line)" :value="trip.line">missing R{{ trip.line }}</option>
-          </NativeSelect>
-          <NativeSelect v-model.number="trip.service" class="min-w-[7rem] flex-1" title="Calendar (service)" aria-label="Calendar">
-            <option v-for="c in calendars" :key="c.id" :value="c.id">C{{ c.id }} ({{ c.start }})</option>
-            <option v-if="!calendars.some(c => c.id === trip.service)" :value="trip.service">missing C{{ trip.service }}</option>
-          </NativeSelect>
-          <Button variant="ghost" size="icon-sm" class="ml-auto text-muted-foreground hover:text-destructive" title="Delete trip" aria-label="Delete trip" @click="remove(model.trips, trip)">
-            <XIcon />
-          </Button>
-        </div>
-        <Button variant="outline" size="sm" class="self-start" :disabled="model.lines.length === 0" @click="addTrip(model)"><PlusIcon /> Add trip</Button>
+        <PagedList v-slot="{ item: trip }" :items="model.trips" :text="tr => `T${tr.id} R${tr.line} C${tr.service} ${model.lines.find(l => l.id === tr.line)?.name ?? ''}`" :pinned="added.trips" noun="trips">
+          <div class="flex flex-wrap items-center gap-1.5 rounded-xl border bg-card p-2 lazy-card">
+            <IdInput :id="trip.id" prefix="T" label="Trip ID" :on-change-id="id => (trip.id = id, true)" />
+            <RefSelect
+              v-model="trip.line" :options="model.lines" :label="l => `${l.name} (R${l.id})`" prefix="R"
+              class="min-w-[7rem] flex-1" title="Line" aria-label="Line"
+            />
+            <RefSelect
+              v-model="trip.service" :options="calendars" :label="c => `C${c.id} (${c.start})`" prefix="C"
+              class="min-w-[7rem] flex-1" title="Calendar (service)" aria-label="Calendar"
+            />
+            <Button variant="ghost" size="icon-sm" class="ml-auto text-muted-foreground hover:text-destructive" title="Delete trip" aria-label="Delete trip" @click="remove(model.trips, trip)">
+              <XIcon />
+            </Button>
+          </div>
+        </PagedList>
+        <Button variant="outline" size="sm" class="self-start" :disabled="model.lines.length === 0" @click="added = { trips: addTrip(model) }"><PlusIcon /> Add trip</Button>
       </PanelSection>
     </div>
   </aside>

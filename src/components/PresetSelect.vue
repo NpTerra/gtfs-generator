@@ -47,7 +47,7 @@ const item = 'flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text
 <template>
   <ComboboxRoot ref="root" v-model="selected" ignore-filter :reset-search-term-on-blur="false" @update:open="query = ''">
     <ComboboxAnchor as-child>
-      <ComboboxTrigger
+      <ComboboxTrigger tabindex="0"
         :title="title"
         class="relative flex h-8 w-full min-w-0 items-center rounded-lg border border-input bg-field py-1 pr-8 pl-2.5 text-left text-sm transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
       >

@@ -176,3 +176,10 @@
         outline-offset: 1px;
     }
 }
+
+/* Model panel cards: the browser skips laying out and painting the ones scrolled out
+   of view, which keeps big imported networks from slowing down every map frame */
+@utility lazy-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 6rem;
+}

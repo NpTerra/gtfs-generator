@@ -19,7 +19,7 @@ const days = computed({
 </script>
 
 <template>
-  <div class="@container flex flex-col gap-1.5 rounded-xl border bg-card p-2">
+  <div class="@container flex flex-col gap-1.5 rounded-xl border bg-card p-2 lazy-card">
     <div class="flex items-center gap-1.5">
       <IdInput :id="calendar.id" prefix="C" label="Calendar ID" :on-change-id="id => changeCalendarId(model, calendar, id)" />
       <div class="grid min-w-0 flex-1 grid-cols-2 gap-1.5 @max-[19rem]:grid-cols-1">
