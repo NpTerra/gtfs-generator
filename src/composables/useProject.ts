@@ -5,7 +5,7 @@
 // "Example Models" is a project like the others, filled from the built-in
 // examples when it doesn't exist (so deleting it resets it).
 import { useEventListener } from '@vueuse/core'
-import { computed, nextTick, ref, watchEffect } from 'vue'
+import { computed, nextTick, ref, shallowRef, watchEffect } from 'vue'
 import { toast } from 'vue-sonner'
 import { exampleTestCases } from '@/lib/examples'
 import { t } from '@/lib/i18n'
@@ -86,6 +86,10 @@ export async function deleteProject() {
   const project = currentProject.value
   const isExamples = project?.id === EXAMPLES
   if (!project || !await confirmDialog(t(isExamples ? 'dlg.resetExamples' : 'dlg.deleteProject', { name: project.name }))) return
+  if (!isExamples) {
+    const entry = toTrash({ kind: 'project', name: project.name, project, files: allTestCases().map(f => M.toJSON(f)) })
+    toast(t('toast.deletedProject', { name: project.name }), { action: { label: 'Undo', onClick: () => restore(entry) } })
+  }
   activeId.value = '' // nothing left to save to
   storage.deleteProject(project.id)
   projectList.value = projectList.value.filter(p => p.id !== project.id)
@@ -192,6 +196,11 @@ export async function renameFile(id: string) {
 export async function deleteFile(id: string) {
   const file = files.value.find(f => f.id === id)
   if (!file || !await confirmDialog(t('dlg.deleteFile', { name: file.name }))) return
+  const content = read(activeProject.value, id)
+  if (content && currentProject.value) {
+    const entry = toTrash({ kind: 'file', name: file.name, project: currentProject.value, files: [M.toJSON(content)] })
+    toast(t('toast.deletedFile', { name: file.name }), { action: { label: 'Undo', onClick: () => restore(entry) } })
+  }
   storage.deleteFile(activeProject.value, id)
   if (id === activeId.value) leaveDeleted(id)
   refresh()
@@ -209,6 +218,35 @@ function leaveDeleted(id: string) {
 
 // the open project's test cases (Export all, Generate all)
 export const allTestCases = () => files.value.map(f => read(activeProject.value, f.id)).filter((f): f is TestCase => f !== null)
+
+// ---- recently deleted: this session's deleted files and projects, newest first ----------
+
+export interface Trashed { kind: 'file' | 'project'; name: string; project: ProjectInfo; files: string[]; at: number }
+export const trash = shallowRef<Trashed[]>([]) // shallow: entries stay plain objects, so === finds them
+
+function toTrash(entry: Omit<Trashed, 'at'>): Trashed {
+  const full = { ...entry, at: Date.now() }
+  trash.value = [full, ...trash.value].slice(0, 20)
+  return full
+}
+
+// a file goes back into its project (or the open one if that is gone too), a
+// project comes back as a new one; either way it is opened
+export function restore(entry: Trashed | undefined) {
+  if (!entry || !trash.value.includes(entry)) return
+  trash.value = trash.value.filter(e => e !== entry)
+  const cases = entry.files.map(json => M.fromJSON(json))
+  if (entry.kind === 'project') {
+    const id = createProject(entry.name)
+    for (const tc of cases) storage.writeFile(id, storage.newId(), M.toJSON(tc))
+    return reopen(id)
+  }
+  const home = projectList.value.some(p => p.id === entry.project.id) ? entry.project.id : activeProject.value
+  if (home !== activeProject.value) reopen(home)
+  // the open file couldn't be left (its save failed): keep it in the bin, not in the wrong project
+  if (home !== activeProject.value) { trash.value = [entry, ...trash.value]; return }
+  addFile(cases[0])
+}
 
 // ---- start ------------------------------------------------------------------------------
 

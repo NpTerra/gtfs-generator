@@ -58,6 +58,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     "toast.nameTaken": "\"{name}\" is already a test case in this project.",
     "toast.changedElsewhere": "\"{name}\" was changed in another tab; reloaded it (undo brings back yours).",
     "toast.copiedTo": "Copied \"{name}\" to {project}.",
+    "toast.deletedFile": "Deleted \"{name}\". Restore it with Undo, or later under ⋮ → Recently deleted.",
+    "toast.deletedProject": "Deleted the project \"{name}\". Restore it with Undo, or later under ⋮ → Recently deleted.",
 
     "problems.none": "No problems found.",
 
@@ -139,6 +141,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     "toast.nameTaken": "Már van „{name}” nevű teszteset ebben a projektben.",
     "toast.changedElsewhere": "„{name}” egy másik lapon módosult; újratöltve (visszavonással visszakapod a tiédet).",
     "toast.copiedTo": "„{name}” átmásolva ide: {project}.",
+    "toast.deletedFile": "„{name}” törölve. Visszaállíthatod az Undo gombbal, vagy később: ⋮ → Recently deleted.",
+    "toast.deletedProject": "A(z) „{name}” projekt törölve. Visszaállíthatod az Undo gombbal, vagy később: ⋮ → Recently deleted.",
 
     "problems.none": "Nincs talált probléma.",
 

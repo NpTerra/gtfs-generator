@@ -3,8 +3,8 @@
 // <name>.json files. Click opens one; right-click or ⋯ for the file actions;
 // F2 / Shift+F6 renames, Delete deletes. Dropping files here imports them.
 import {
-  CopyIcon, DownloadIcon, EllipsisIcon, EllipsisVerticalIcon, FileJsonIcon, FolderInputIcon,
-  FolderOpenIcon, PackageIcon, PencilIcon, PlusIcon, SaveIcon, Trash2Icon, UploadIcon,
+  CopyIcon, DownloadIcon, EllipsisIcon, EllipsisVerticalIcon, FileJsonIcon, FolderIcon, FolderInputIcon,
+  FolderOpenIcon, HistoryIcon, PackageIcon, PencilIcon, PlusIcon, SaveIcon, Trash2Icon, UploadIcon,
 } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import PanelHeader from '@/components/PanelHeader.vue'
@@ -16,7 +16,7 @@ import {
 import { activeId } from '@/composables/useEditor'
 import { exportAll, exportJson, generateAll, importFiles, pickAndImport } from '@/composables/useFileActions'
 import {
-  copyToProject, currentProject, deleteFile, duplicateFile, fileTestCase, files, newFile, openFile, projects, renameFile,
+  copyToProject, currentProject, deleteFile, duplicateFile, fileTestCase, files, newFile, openFile, projects, renameFile, restore, trash,
 } from '@/composables/useProject'
 
 const menuFor = ref<string | null>(null) // file whose action menu is open
@@ -29,6 +29,8 @@ function onKey(ev: KeyboardEvent, id: string) {
   ev.preventDefault()
   ev.stopPropagation() // not the editor's shortcuts (Delete would also remove the selected station)
 }
+
+const timeOf = (at: number) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
 function exportFile(id: string) {
   const file = fileTestCase(id)
@@ -70,6 +72,19 @@ function onDrop(ev: DragEvent) {
           <DropdownMenuContent align="end" class="w-64">
             <DropdownMenuItem @select="generateAll"><DownloadIcon /> Generate all</DropdownMenuItem>
             <DropdownMenuItem @select="exportAll"><PackageIcon /> Export all as JSON</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger :disabled="!trash.length"><HistoryIcon /> Recently deleted</DropdownMenuSubTrigger>
+              <DropdownMenuSubContent class="w-72">
+                <DropdownMenuItem v-for="e in trash" :key="e.at + e.name" :title="`Restore ${e.kind === 'project' ? 'the project' : e.name + '.json'}`" @select="restore(e)">
+                  <component :is="e.kind === 'project' ? FolderIcon : FileJsonIcon" />
+                  <span class="truncate">{{ e.kind === 'project' ? e.name : e.name + '.json' }}</span>
+                  <span class="ml-auto shrink-0 text-xs text-muted-foreground">
+                    {{ e.kind === 'file' ? e.project.name + ' · ' : '' }}{{ timeOf(e.at) }}
+                  </span>
+                </DropdownMenuItem>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
           </DropdownMenuContent>
         </DropdownMenu>
       </template>
