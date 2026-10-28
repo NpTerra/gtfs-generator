@@ -28,7 +28,7 @@ function addStationHere() {
         <Tabs :model-value="tab" @update:model-value="v => setTab(v as 'arrange' | 'expected')">
           <TabsList>
             <TabsTrigger value="arrange">Arrange</TabsTrigger>
-            <TabsTrigger value="expected">Expected</TabsTrigger>
+            <TabsTrigger value="expected" class="data-[state=active]:text-link">Expected</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>

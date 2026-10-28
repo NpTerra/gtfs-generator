@@ -229,7 +229,8 @@ function onDblClick(ev: MouseEvent) {
 
 <template>
   <svg
-    ref="svg" class="map block size-full touch-none select-none" :class="panning ? 'cursor-grabbing' : 'cursor-grab'"
+    ref="svg" class="map block size-full touch-none select-none"
+    :class="[panning ? 'cursor-grabbing' : 'cursor-grab', tab === 'expected' && 'expected']"
     @pointerdown="onPointerDown" @pointermove="onPointerMove" @pointerup="onPointerUp"
     @pointercancel="onPointerCancel" @pointerleave="cursorText = ''" @wheel.prevent="onWheel" @dblclick="onDblClick"
   >
@@ -285,6 +286,13 @@ function onDblClick(ev: MouseEvent) {
 <style scoped>
 /* plain CSS is still the simplest way to style SVG; colors come from theme tokens */
 .map { background: var(--map-bg); }
+/* the Expected model's map is tinted with the blue that marks "Expected" elsewhere,
+   so the two tabs can't be mistaken for each other at a glance */
+.map.expected {
+  --map-bg: color-mix(in oklch, var(--signal) var(--expected-tint), var(--background));
+  --grid: color-mix(in oklch, var(--signal) calc(var(--expected-tint) * 2.5), var(--background));
+  --grid-axis: color-mix(in oklch, var(--signal) calc(var(--expected-tint) * 6), var(--background));
+}
 .grid-line { stroke: var(--grid); stroke-width: 1; }
 .grid-axis { stroke: var(--grid-axis); stroke-width: 1.5; }
 .grid-label { fill: var(--grid-label); font-size: 10.5px; font-family: var(--font-mono); }

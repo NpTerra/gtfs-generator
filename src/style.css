@@ -105,6 +105,7 @@
     --grid: #ebecf0;
     --grid-axis: #c9ccd6;
     --grid-label: #73767c;
+    --expected-tint: 6%;            /* how much blue the Expected model's map mixes in */
     --project-tint: 0.2;            /* strength of the project-color glow in the toolbar's corner */
 }
 
@@ -146,6 +147,7 @@
     --grid: #232427;
     --grid-axis: #40434a;
     --grid-label: #9fa2a8;
+    --expected-tint: 11%;
     --project-tint: 0.32;
 }
 
