@@ -1,27 +1,22 @@
 // The editor's shared state and actions. Module-level refs make this a
 // singleton "store": every component that imports it sees the same state.
 // (Pinia is the official store library, worth adopting once this grows.)
-import { useManualRefHistory, watchDebounced } from '@vueuse/core'
+import { useEventListener, useManualRefHistory, watchDebounced } from '@vueuse/core'
 import { computed, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { t } from '@/lib/i18n'
 import type { Calendar, Line, Model, Station, TestCase, Trip } from '@/lib/model'
 import * as M from '@/lib/model'
+import * as storage from '@/lib/storage'
 import { confirmDialog } from './useConfirm'
-
-const AUTOSAVE_KEY = 'gtfs-test-editor-vue-autosave'
-
-function restore(): TestCase {
-  try {
-    const saved = localStorage.getItem(AUTOSAVE_KEY)
-    if (saved) return M.fromJSON(saved)
-  } catch { /* corrupted or unavailable */ }
-  return M.defaultTestCase()
-}
 
 // ---- state ----------------------------------------------------------------------
 
-export const tc = ref<TestCase>(restore())
+// the open test case and where it is saved; useProject.ts opens the real one on start
+export const tc = ref<TestCase>(M.defaultTestCase())
+export const activeProject = ref('')
+export const activeId = ref('') // file id within the project
+export const otherNames = ref<string[]>([]) // names of the project's other files (kept by useProject)
 export const tab = ref<'arrange' | 'expected'>('arrange') // which model the map + Model panel edit
 export const selection = ref<number | null>(null) // selected station id
 export const pickLineId = ref<number | null>(null) // line that map clicks append stops to
@@ -30,7 +25,12 @@ export const loadCount = ref(0) // bumped on every load, so the map can re-fit
 export const editableModel = computed<Model>(() =>
   tab.value === 'expected' ? tc.value.expected.model : tc.value.arrange)
 export const canEdit = computed(() => !(tab.value === 'expected' && tc.value.expected.type === 'exception'))
-export const problems = computed(() => M.validate(tc.value))
+export const problems = computed(() => {
+  const list = M.validate(tc.value)
+  if (otherNames.value.some(n => n.toLowerCase() === tc.value.name.toLowerCase()))
+    list.unshift({ level: 'warning', text: t('v.dupFileName', { name: tc.value.name }) })
+  return list
+})
 export const errorCount = computed(() => problems.value.filter(p => p.level === 'error').length)
 export const pickLine = computed(() => editableModel.value.lines.find(l => l.id === pickLineId.value) ?? null)
 
@@ -41,8 +41,13 @@ export const pickLine = computed(() => editableModel.value.lines.find(l => l.id 
 const history = useManualRefHistory(tc, { capacity: 100, dump: JSON.stringify, parse: JSON.parse })
 const dirty = computed(() => JSON.stringify(tc.value) !== history.last.value.snapshot)
 
+let saveFailed = false
 function persist() {
-  try { localStorage.setItem(AUTOSAVE_KEY, M.toJSON(tc.value)) } catch { /* storage full / disabled */ }
+  if (!activeId.value) return
+  const ok = storage.writeFile(activeProject.value, activeId.value, M.toJSON(tc.value))
+  // deferred: the first save runs before the toaster is mounted
+  if (!ok && !saveFailed) setTimeout(() => toast.error(t('toast.saveFailed'), { duration: Infinity, closeButton: true }))
+  saveFailed = !ok
 }
 
 function commit() {
@@ -51,6 +56,8 @@ function commit() {
   persist()
 }
 watchDebounced(tc, commit, { deep: true, debounce: 300 })
+// the last edit before a reload or closing the tab is still within the debounce
+useEventListener('pagehide', commit)
 
 // Discrete interactions (clicks, select/checkbox changes, the click ending a
 // station drag) are their own undo step right away, so quick successive
@@ -88,13 +95,37 @@ export function setTab(next: 'arrange' | 'expected') {
   pickLineId.value = null
 }
 
-export function loadTestCase(next: TestCase) {
+// Opens a project file; each file has its own undo history, starting here.
+// Refuses (false) while the open file's last save failed, which would lose it.
+// Blank activeId first to leave a file without saving it (it is being deleted).
+export function openTestCase(project: string, id: string, next: TestCase): boolean {
+  commit() // saves the file being left
+  if (saveFailed && activeId.value) {
+    toast.error(t('toast.saveFailed'))
+    return false
+  }
+  activeProject.value = project
+  activeId.value = id
+  storage.setActiveProjectId(project)
+  storage.setActiveFileId(project, id)
   tc.value = next
   tab.value = 'arrange'
   selection.value = null
   pickLineId.value = null
   loadCount.value++
-  commit() // loading is undoable
+  history.commit()
+  history.clear()
+  persist()
+  return true
+}
+
+// a newer version saved elsewhere (another browser tab): undoable, like an edit
+export function reloadTestCase(next: TestCase) {
+  if (dirty.value) history.commit() // without saving: storage already has their version
+  tc.value = next
+  selection.value = null
+  pickLineId.value = null
+  history.commit()
 }
 
 export function addStation(x: number, y: number) {

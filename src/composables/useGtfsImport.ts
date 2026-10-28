@@ -1,24 +1,29 @@
 // State of the "Import from GTFS" dialog (GtfsImportDialog.vue): pick routes
-// from a feed and replace the Arrange or Expected model with them.
+// from a feed to replace the Arrange or Expected model with, or to start a new
+// test case with (a feed imported into the project).
 import { reactive } from 'vue'
 import { toast } from 'vue-sonner'
 import type { Feed } from '@/lib/feed'
 import { FEED_FILES, readFeed } from '@/lib/feed'
 import { t } from '@/lib/i18n'
+import * as M from '@/lib/model'
 import * as zip from '@/lib/zip'
 import { replaceModel, tab } from './useEditor'
+import { addFile } from './useProject'
+
+export type Target = 'arrange' | 'expected' | 'new'
 
 export const gtfsImport = reactive({
   open: false,
   fileName: '',
-  target: 'arrange' as 'arrange' | 'expected',
+  target: 'arrange' as Target,
   feed: null as Feed | null,
   selected: new Set<string>(),
   oneTripPerLine: true,
 })
 
-// files: an already-unzipped feed, or a .zip File to read first
-export async function openGtfsImport(source: File | Record<string, Uint8Array>, fileName?: string) {
+// files: an already-unzipped feed, or a .zip File to read first; false if it couldn't be read
+export async function openGtfsImport(source: File | Record<string, Uint8Array>, fileName?: string, target: Target = tab.value): Promise<boolean> {
   const reading = toast.loading(t('gtfs.reading'))
   try {
     await new Promise(r => setTimeout(r, 30)) // let the toast paint before the heavy parsing
@@ -32,16 +37,18 @@ export async function openGtfsImport(source: File | Record<string, Uint8Array>, 
     Object.assign(gtfsImport, {
       open: true,
       fileName: fileName ?? (source instanceof File ? source.name : 'feed.zip'),
-      target: tab.value,
+      target,
       feed,
       // small feeds (e.g. our own arrange.zip) come in whole; big ones start empty
       selected: new Set(feed.routes.length <= 8 ? feed.routes.map(r => r.key) : []),
       // one trip per line keeps generated stop_times small; feeds with few trips keep them all
       oneTripPerLine: feed.routes.some(r => r.tripCount > 5),
     })
+    return true
   } catch (err) {
     console.error(err)
     toast.error(t('toast.importFailed', { msg: (err as Error).message }), { id: reading })
+    return false
   }
 }
 
@@ -52,7 +59,16 @@ export async function applyGtfsImport() {
   try {
     await new Promise(r => setTimeout(r, 30)) // let the toast paint: big feeds take a few seconds
     const model = feed.build([...selected], oneTripPerLine)
-    replaceModel(target, model)
+    if (target === 'new') {
+      const next = M.defaultTestCase()
+      const name = gtfsImport.fileName.replace(/\.zip$/i, '').replace(/[^A-Za-z0-9_\-. ]/g, '_')
+      next.name = M.isBadName(name) ? 'imported_routes' : name
+      next.arrange = model
+      next.expected.model = M.cloneModel(model)
+      addFile(next)
+    } else {
+      replaceModel(target, model)
+    }
     gtfsImport.open = false
     toast.success(t('toast.importedRoutes', {
       n: model.lines.length, stations: model.stations.length, target: target === 'expected' ? 'Expected' : 'Arrange',

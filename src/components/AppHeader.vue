@@ -1,8 +1,10 @@
 <script setup lang="ts">
-// IntelliJ-style main toolbar: the project widget (test name + file actions)
-// on the left, the main action and window settings on the right.
-import { ChevronDownIcon, CircleXIcon, DownloadIcon, PlusIcon, SaveIcon, TriangleAlertIcon, UploadIcon } from '@lucide/vue'
-import { computed, ref } from 'vue'
+// IntelliJ-style main toolbar: the project widget (switch, create, rename,
+// delete projects) on the left, the main action and window settings on the right.
+import {
+  CheckIcon, ChevronDownIcon, CircleXIcon, DownloadIcon, FolderPlusIcon, PencilIcon, RotateCcwIcon, Trash2Icon, TriangleAlertIcon,
+} from '@lucide/vue'
+import { computed } from 'vue'
 import ThemeMenu from '@/components/ThemeMenu.vue'
 import { Button } from '@/components/ui/button'
 import {
@@ -10,45 +12,56 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import LanguageMenu from '@/components/LanguageMenu.vue'
-import { errorCount, problems, tc } from '@/composables/useEditor'
-import { examples, exportJson, generate, importFile, loadExample, newTestCase } from '@/composables/useFileActions'
+import { activeProject, errorCount, problems } from '@/composables/useEditor'
+import { generate } from '@/composables/useFileActions'
 import { showPanel } from '@/composables/usePanels'
+import {
+  currentProject, deleteProject, EXAMPLES, newProject, openProject, projects, renameProject,
+} from '@/composables/useProject'
 
-const fileInput = ref<HTMLInputElement>()
 const warningCount = computed(() => problems.value.length - errorCount.value)
 
-function onFilePicked() {
-  const file = fileInput.value?.files?.[0]
-  if (file) importFile(file)
-  fileInput.value!.value = ''
+// IntelliJ's project icon: the name's initials on a color picked from the name
+function initials(name: string) {
+  const words = name.trim().split(/[\s_-]+/).filter(Boolean)
+  return ((words[0]?.[0] ?? '?') + (words[1]?.[0] ?? words[0]?.[1] ?? '')).toUpperCase()
+}
+function badgeStyle(name: string) {
+  const hue = [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 0)
+  return { background: `linear-gradient(135deg, hsl(${hue} 65% 55%), hsl(${(hue + 50) % 360} 65% 50%))` }
 }
 </script>
 
 <template>
   <header class="flex h-10 shrink-0 items-center justify-between gap-2 px-2">
     <div class="flex min-w-0 items-center gap-1">
-      <!-- project widget, as in IntelliJ: the test name opens the file actions -->
       <DropdownMenu>
         <DropdownMenuTrigger as-child>
-          <Button variant="ghost" class="min-w-0 gap-2 px-1.5 font-semibold" title="Test case: new, import, export, examples" aria-label="Test case menu">
-            <span class="grid size-5 shrink-0 place-items-center rounded-[5px] bg-gradient-to-br from-[#3871e1] to-[#9f6cf5] text-[10px] font-bold text-white">GT</span>
-            <span class="truncate">{{ tc.name || 'Untitled test' }}</span>
+          <Button variant="ghost" class="min-w-0 gap-2 px-1.5 font-semibold" title="Projects: switch, new, rename, delete" :aria-label="`Project: ${currentProject?.name ?? ''}`">
+            <span class="grid size-5 shrink-0 place-items-center rounded-[5px] text-[10px] font-bold text-white" aria-hidden="true" :style="badgeStyle(currentProject?.name ?? '')">
+              {{ initials(currentProject?.name ?? '') }}
+            </span>
+            <span class="truncate">{{ currentProject?.name }}</span>
             <ChevronDownIcon class="size-3.5 shrink-0 text-muted-foreground" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" class="w-60">
-          <DropdownMenuItem @select="newTestCase"><PlusIcon /> New test case</DropdownMenuItem>
-          <DropdownMenuItem @select="fileInput?.click()"><UploadIcon /> Import…</DropdownMenuItem>
-          <DropdownMenuItem @select="exportJson"><SaveIcon /> Export JSON</DropdownMenuItem>
+        <DropdownMenuContent align="start" class="w-64">
+          <DropdownMenuLabel class="text-xs font-semibold text-muted-foreground">Projects</DropdownMenuLabel>
+          <DropdownMenuItem v-for="p in projects" :key="p.id" @select="openProject(p.id)">
+            <span class="grid size-5 shrink-0 place-items-center rounded-[5px] text-[10px] font-bold text-white" aria-hidden="true" :style="badgeStyle(p.name)">{{ initials(p.name) }}</span>
+            <span class="truncate">{{ p.name }}</span>
+            <template v-if="p.id === activeProject"><CheckIcon class="ml-auto" /><span class="sr-only">(open)</span></template>
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel class="text-xs font-semibold text-muted-foreground">Load example</DropdownMenuLabel>
-          <DropdownMenuItem v-for="ex in examples" :key="ex.file" @select="loadExample(ex)">{{ ex.name }}</DropdownMenuItem>
+          <DropdownMenuItem @select="newProject"><FolderPlusIcon /> New project…</DropdownMenuItem>
+          <DropdownMenuItem @select="renameProject"><PencilIcon /> Rename project…</DropdownMenuItem>
+          <DropdownMenuItem v-if="activeProject === EXAMPLES" @select="deleteProject"><RotateCcwIcon /> Reset Example Models…</DropdownMenuItem>
+          <DropdownMenuItem v-else variant="destructive" @select="deleteProject"><Trash2Icon /> Delete project…</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      <input ref="fileInput" type="file" accept=".json,.zip" hidden @change="onFilePicked">
     </div>
 
-    <div class="flex items-center gap-1.5">
+<div class="flex items-center gap-1.5">
       <Button
         size="sm" title="Download the submission files (act.txt, comment.txt, arrange.zip, assert.*)"
         @click="generate"

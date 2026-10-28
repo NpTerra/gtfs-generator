@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Pick routes from a GTFS feed to replace the Arrange or Expected model.
+// Pick routes from a GTFS feed to replace the Arrange or Expected model with, or for a new test case.
 // State and the import itself live in composables/useGtfsImport.ts.
 import { SearchIcon } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
@@ -39,7 +39,10 @@ const selectVisible = (on: boolean) => visible.value.forEach(r => toggle(r.key, 
     <DialogContent class="flex max-h-[85dvh] flex-col gap-3 sm:max-w-xl">
       <DialogHeader>
         <DialogTitle>Import routes from GTFS</DialogTitle>
-        <DialogDescription>
+        <DialogDescription v-if="gtfsImport.target === 'new'">
+          From {{ gtfsImport.fileName }}. The picked routes become the Arrange model of a new test case (and a copy of them its Expected model).
+        </DialogDescription>
+        <DialogDescription v-else>
           From {{ gtfsImport.fileName }}. The picked routes replace the {{ targetName }} model;
           the agency and its phone number stay as they are.
         </DialogDescription>
@@ -82,7 +85,9 @@ const selectVisible = (on: boolean) => visible.value.forEach(r => toggle(r.key, 
         <span class="text-muted-foreground">{{ gtfsImport.selected.size }} of {{ routes.length }} routes picked</span>
         <div class="flex gap-2">
           <Button variant="outline" @click="gtfsImport.open = false">Cancel</Button>
-          <Button :disabled="gtfsImport.selected.size === 0" @click="applyGtfsImport">Replace {{ targetName }} model</Button>
+          <Button :disabled="gtfsImport.selected.size === 0" @click="applyGtfsImport">
+            {{ gtfsImport.target === 'new' ? 'Create test case' : `Replace ${targetName} model` }}
+          </Button>
         </div>
       </DialogFooter>
     </DialogContent>

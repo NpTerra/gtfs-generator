@@ -1,24 +1,17 @@
-// Import / export / generate / examples: everything that turns the test case
-// into files or files into a test case.
+// Import / export / generate: everything that turns test cases
+// into files or files into test cases (project files, see useProject.ts).
 import { nextTick } from 'vue'
 import { toast } from 'vue-sonner'
 import { t } from '@/lib/i18n'
 import * as gtfs from '@/lib/gtfs'
 import * as M from '@/lib/model'
+import { allSubmissions, readZip } from '@/lib/submission'
 import * as zip from '@/lib/zip'
-import { confirmDialog } from './useConfirm'
-import { loadTestCase, problems, tc } from './useEditor'
+import { problems, tc } from './useEditor'
 import { openGtfsImport } from './useGtfsImport'
 import { showPanel } from './usePanels'
+import { addFile, allTestCases, currentProject } from './useProject'
 import { openSections } from './useSections'
-
-// The examples are bundled at build time straight from examples/, so
-// no directory listing is needed (adding one means rebuilding).
-const exampleFiles = import.meta.glob<unknown>('../../examples/*.json', { eager: true, import: 'default' })
-export const examples = Object.entries(exampleFiles)
-  .sort(([a], [b]) => a.localeCompare(b))
-  .map(([path, data]) => ({ file: path.split('/').pop()!, data }))
-  .map(e => ({ ...e, name: String((e.data as { name?: string })?.name ?? e.file) }))
 
 function download(filename: string, data: BlobPart, mime: string) {
   const url = URL.createObjectURL(new Blob([data], { type: mime }))
@@ -29,73 +22,59 @@ function download(filename: string, data: BlobPart, mime: string) {
   setTimeout(() => URL.revokeObjectURL(url), 5000)
 }
 
-export async function newTestCase() {
-  if (await confirmDialog(t('dlg.newConfirm'))) loadTestCase(M.defaultTestCase())
+// the open test case, or another project file
+export function exportJson(file: M.TestCase = tc.value) {
+  download(file.name + '.json', M.toJSON(file) + '\n', 'application/json')
 }
 
-export async function loadExample(example: { data: unknown }) {
-  if (!await confirmDialog(t('dlg.exampleConfirm'))) return
-  loadTestCase(M.fromJSON(JSON.stringify(example.data)))
-  toast(t('toast.exampleLoaded', { name: tc.value.name }))
+// "<project>-json.zip", "<project>-submissions.zip": the two project zips must not look alike
+const projectFileName = (kind: string) => `${(currentProject.value?.name ?? 'project').replace(/[^\w.-]+/g, '_')}-${kind}.zip`
+
+// every project file as <name>.json in one zip; Import reads it back
+export function exportAll() {
+  const names: string[] = [] // duplicate names would overwrite each other in the zip
+  const files = allTestCases().map((f) => {
+    names.push(M.uniqueName(f.name, names))
+    return { name: names.at(-1) + '.json', data: M.toJSON(f) + '\n' }
+  })
+  download(projectFileName('json'), zip.create(files) as BlobPart, 'application/zip')
 }
 
-export function exportJson() {
-  download(tc.value.name + '.json', M.toJSON(tc.value), 'application/json')
+export function pickAndImport() {
+  const input = document.createElement('input')
+  Object.assign(input, { type: 'file', multiple: true, accept: '.json,.zip' })
+  input.onchange = () => importFiles(input.files ?? [])
+  input.click()
 }
 
-export async function importFile(file: File) {
-  try {
-    if (file.name.toLowerCase().endsWith('.json')) {
-      const next = M.fromJSON(await file.text())
-      if (!await confirmDialog(t('dlg.importConfirm', { name: next.name }))) return
-      loadTestCase(next)
-      toast(t('toast.importedJson', { name: next.name }))
-      return
-    }
-
-    // by file name alone: a zipped folder has its files under "folder/act.txt"
-    const entries = await zip.read(new Uint8Array(await file.arrayBuffer()))
-    const files = Object.fromEntries(Object.entries(entries).map(([name, data]) => [name.split('/').pop()!, data]))
-
-    if (files['act.txt'] || files['arrange.zip']) {
-      // a full submission zip (act.txt + comment.txt + arrange.zip + assert.*)
-      if (!await confirmDialog(t('dlg.importConfirm', { name: file.name }))) return
-      const dec = new TextDecoder()
-      const text = (name: string) => files[name] ? dec.decode(files[name]).replace(/\r\n/g, '\n').replace(/\n+$/, '') : ''
-
-      const next = M.defaultTestCase()
-      next.name = file.name.replace(/\.zip$/i, '')
-      next.description = text('comment.txt')
-      next.act = text('act.txt')
-      next.arrange = M.emptyModel()
-      next.expected = { type: 'model', exception: 'INVALID_ARGUMENT', model: M.emptyModel() }
-      if (files['arrange.zip']) {
-        const { model, agency } = gtfs.importGTFS(await zip.read(files['arrange.zip']))
-        next.arrange = model
-        if (agency) next.agency = agency
+// Each test case found becomes a new project file (the last one is opened):
+// test case .json files, submission zips, zips of several (Export all,
+// Generate all). A bare GTFS feed opens the route picker for a new test case.
+export async function importFiles(list: Iterable<File>) {
+  const cases: M.TestCase[] = []
+  const failed: string[] = []
+  let feedOpened = false // the route picker takes one feed at a time
+  for (const file of list) {
+    try {
+      if (file.name.toLowerCase().endsWith('.json')) {
+        cases.push(M.fromJSON(await file.text()))
+        continue
       }
-      if (files['assert.txt']) {
-        next.expected.type = 'exception'
-        next.expected.exception = text('assert.txt')
-      } else if (files['assert.zip']) {
-        next.expected.model = gtfs.importGTFS(await zip.read(files['assert.zip'])).model
-      }
-      loadTestCase(next)
-      toast(t('toast.importedSubmission', { name: next.name }))
-      return
+      const found = await readZip(file.name, await zip.read(new Uint8Array(await file.arrayBuffer())))
+      cases.push(...found.cases)
+      failed.push(...found.failed.map(path => `${file.name}: ${path}`))
+      if (found.gtfs && feedOpened) failed.push(`${file.name} (${t('toast.oneFeed')})`)
+      else if (found.gtfs) feedOpened = await openGtfsImport(found.gtfs, file.name, 'new')
+      else if (found.cases.length + found.failed.length === 0) failed.push(file.name)
+    } catch (err) {
+      console.error(err)
+      failed.push(file.name)
     }
-
-    if (files['stops.txt']) {
-      // a bare GTFS feed: pick routes to replace the active tab's model with
-      await openGtfsImport(files, file.name)
-      return
-    }
-
-    toast.error(t('toast.zipUnknown'))
-  } catch (err) {
-    console.error(err)
-    toast.error(t('toast.importFailed', { msg: (err as Error).message }))
   }
+  const added = cases.filter((next, i) => addFile(next, { open: i === cases.length - 1 }))
+  if (added.length === 1) toast(t('toast.importedOne', { name: added[0].name }))
+  else if (added.length > 1) toast(t('toast.importedMany', { n: added.length }))
+  if (failed.length) toast.error(t('toast.importSkipped', { files: failed.join(', ') }))
 }
 
 export function generate() {
@@ -119,6 +98,22 @@ export function generate() {
   try {
     download(current.name + '.zip', zip.create(gtfs.buildTestFiles(current)) as BlobPart, 'application/zip')
     toast.success(t('toast.generated', { name: current.name }))
+  } catch (err) {
+    console.error(err)
+    toast.error(t('toast.generateFailed', { msg: (err as Error).message }))
+  }
+}
+
+// one zip with a submission folder per test case; all of them must be ready
+export function generateAll() {
+  const cases = allTestCases()
+  const names = cases.map(f => f.name.toLowerCase())
+  const blocked = cases.filter((f, i) => M.isPhoneMissing(f.agency) || names.indexOf(names[i]) !== i
+    || M.validate(f).some(p => p.level === 'error')).map(f => f.name)
+  if (blocked.length) return void toast.error(t('toast.generateAllBlocked', { names: blocked.join(', ') }), { duration: 10000 })
+  try {
+    download(projectFileName('submissions'), zip.create(allSubmissions(cases)) as BlobPart, 'application/zip')
+    toast.success(t('toast.generatedAll', { n: cases.length }))
   } catch (err) {
     console.error(err)
     toast.error(t('toast.generateFailed', { msg: (err as Error).message }))

@@ -5,13 +5,15 @@ import { ChevronRightIcon, CircleXIcon, TriangleAlertIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { editableModel, errorCount, problems, selection, tab, tc } from '@/composables/useEditor'
 import { panels, showPanel } from '@/composables/usePanels'
+import { currentProject } from '@/composables/useProject'
 import { cursorText } from '@/composables/useViewport'
 import LanguageMenu from '@/components/LanguageMenu.vue'
 import { t } from '@/lib/i18n'
 
 const warningCount = computed(() => problems.value.length - errorCount.value)
 const crumbs = computed(() => [
-  tc.value.name,
+  currentProject.value?.name,
+  tc.value.name + '.json',
   tab.value === 'expected' ? 'Expected model' : 'Arrange model',
   editableModel.value.stations.find(s => s.id === selection.value)?.name,
 ].filter(Boolean))

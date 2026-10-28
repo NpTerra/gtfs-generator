@@ -10,6 +10,7 @@ import * as csv from '../src/lib/csv'
 import * as gtfs from '../src/lib/gtfs'
 import { t } from '../src/lib/i18n'
 import * as M from '../src/lib/model'
+import * as submission from '../src/lib/submission'
 import * as zip from '../src/lib/zip'
 
 const ROOT = join(__dirname, '..')
@@ -91,6 +92,39 @@ it('act.txt split/join keeps field positions', () => {
   expect(keys('CLOSE_AREA\nA;10')).toEqual([])
   expect(keys('CLOSE_AREA\nX;ten')).toEqual(['v.actNoStation', 'v.actNotNumber'])
   expect(keys('DIVERT_LINE\nl1;A;Nope')).toEqual(['v.actNoStation']) // line names match case-insensitively
+})
+
+it('project files: unique names, Generate all / Export all zips import back', async () => {
+  expect(M.uniqueName('a', ['b'])).toBe('a')
+  expect(M.uniqueName('a', ['A', 'a_2'])).toBe('a_3') // case-insensitive
+  expect(M.uniqueName('a_2', ['a_2'])).toBe('a_3')
+  expect(M.uniqueName('line_10', ['line_10', 'line_11'])).toBe('line_12')
+
+  const cases = readdirSync(EXAMPLES).filter(f => f.endsWith('.json')).map(f => M.fromJSON(readFileSync(join(EXAMPLES, f), 'utf8')))
+  const roundTrip = async (entries: zip.ZipEntry[], zipName = 'all.zip') =>
+    submission.readZip(zipName, await zip.read(zip.create(entries)))
+
+  const all = await roundTrip(submission.allSubmissions(cases))
+  expect(all.failed).toEqual([])
+  expect(all.cases.map(c => c.name)).toEqual(cases.map(c => c.name)) // one folder each, named after it
+  for (const [i, c] of all.cases.entries()) {
+    expect(c.act).toBe(cases[i].act)
+    expect(c.expected.type).toBe(cases[i].expected.type)
+    expect(c.arrange.stations).toHaveLength(cases[i].arrange.stations.length)
+  }
+
+  const single = await roundTrip(gtfs.buildTestFiles(cases[0]), 'renamed.zip')
+  expect(single.cases.map(c => c.name)).toEqual(['renamed']) // a submission at the zip's root is named after the zip
+  const oneFolder = await roundTrip(submission.allSubmissions([cases[0]]), 'all.zip')
+  expect(oneFolder.cases.map(c => c.name)).toEqual([cases[0].name]) // one in a folder after the folder
+
+  const json = await roundTrip([...cases.map(c => ({ name: c.name + '.json', data: M.toJSON(c) })), { name: 'broken.json', data: '{' }])
+  expect(json.cases.map(c => M.toJSON(c))).toEqual(cases.map(c => M.toJSON(c)))
+  expect(json.failed).toEqual(['broken.json'])
+
+  const feed = await roundTrip(gtfs.modelToGTFSFiles(cases[0].arrange, cases[0].agency), 'city.zip')
+  expect(feed.cases).toEqual([])
+  expect(Object.keys(feed.gtfs ?? {})).toContain('stops.txt')
 })
 
 const submissions = existsSync(SUBMITTED)

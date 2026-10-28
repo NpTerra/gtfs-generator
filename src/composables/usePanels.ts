@@ -2,9 +2,9 @@
 // with these flags, so any component can show/hide a panel by flipping one.
 import { nextTick, reactive } from 'vue'
 
-export type PanelName = 'test' | 'model' | 'problems'
+export type PanelName = 'project' | 'test' | 'model' | 'problems'
 
-export const panels = reactive<Record<PanelName, boolean>>({ test: true, model: true, problems: true })
+export const panels = reactive<Record<PanelName, boolean>>({ project: true, test: true, model: true, problems: true })
 
 // shows a panel and scrolls it into view (phones stack the panels)
 export function showPanel(name: PanelName) {

@@ -323,11 +323,28 @@ function validateModel(model: Model, label: string, problems: Problem[]) {
   return calendarIds
 }
 
+// the test name is also the zip, folder and project file name; "." and ".."
+// pass the character check but are no usable name
+export function isBadName(name: string): boolean {
+  return !/^[A-Za-z0-9_\-. ]+$/.test(name) || !/[^. ]/.test(name)
+}
+
+// name if it is free, else the next free numbered one: a -> a_2, a_2 -> a_3, line_10 -> line_11
+// (compared case-insensitively, as on macOS/Windows disks)
+export function uniqueName(name: string, taken: string[]): string {
+  const used = new Set(taken.map(n => n.toLowerCase()))
+  if (!used.has(name.toLowerCase())) return name
+  const m = /^(.*)_(\d+)$/.exec(name)
+  const base = m ? m[1] : name
+  let n = m ? Number(m[2]) + 1 : 2
+  while (used.has(`${base}_${n}`.toLowerCase())) n++
+  return `${base}_${n}`
+}
+
 export function validate(tc: TestCase): Problem[] {
   const problems: Problem[] = []
 
-  // "." and ".." pass the character check but are no usable zip/folder name
-  if (!/^[A-Za-z0-9_\-. ]+$/.test(tc.name) || !/[^. ]/.test(tc.name)) problems.push({ level: 'error', text: t('v.badName') })
+  if (isBadName(tc.name)) problems.push({ level: 'error', text: t('v.badName') })
   if (!tc.description?.trim()) problems.push({ level: 'warning', text: t('v.noDescription') })
   if (!tc.act?.trim()) problems.push({ level: 'error', text: t('v.noAct') })
   for (const p of checkAct(tc.act, tc.arrange)) problems.push({ level: 'warning', text: t(p.key, p.params) })

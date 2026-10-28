@@ -28,7 +28,7 @@ async function copyArrange() {
     <div class="@container flex-1 overflow-y-auto pb-6">
       <PanelSection id="test" title="Test">
         <FormField label="Name" :hint="t('hint.testName')">
-          <Input v-model="tc.name" />
+          <Input v-model="tc.name" data-field="test-name" />
         </FormField>
         <FormField label="Description (comment.txt)" :hint="t('hint.description')">
           <Textarea v-model="tc.description" rows="4" class="text-[15px] leading-relaxed md:text-[15px]" />
