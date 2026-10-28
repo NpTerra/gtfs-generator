@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // IntelliJ-style status bar: where you are (or, over the map, how to use it)
-// on the left; cursor position, problems and language widgets on the right.
+// on the left; cursor position, storage, problems and language widgets on the right.
 import { ChevronRightIcon, CircleXIcon, TriangleAlertIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { editableModel, errorCount, problems, selection, tab, tc } from '@/composables/useEditor'
@@ -8,6 +8,7 @@ import { panels, showPanel } from '@/composables/usePanels'
 import { currentProject } from '@/composables/useProject'
 import { cursorText } from '@/composables/useViewport'
 import LanguageMenu from '@/components/LanguageMenu.vue'
+import StorageWidget from '@/components/StorageWidget.vue'
 import { t } from '@/lib/i18n'
 
 const warningCount = computed(() => problems.value.length - errorCount.value)
@@ -30,6 +31,7 @@ const crumbs = computed(() => [
     </nav>
     <div class="flex shrink-0 items-center gap-3">
       <span class="font-mono">{{ cursorText }}</span>
+      <StorageWidget />
       <button
         type="button" class="flex items-center gap-2 rounded px-1.5 py-0.5 hover:bg-muted hover:text-foreground"
         :aria-label="`${errorCount} errors, ${warningCount} warnings`" :aria-pressed="panels.problems"

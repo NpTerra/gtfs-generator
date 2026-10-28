@@ -4,7 +4,6 @@
 // (saved by its autosave); the others live only in storage until opened.
 // "Example Models" is a project like the others, filled from the built-in
 // examples when it doesn't exist (so deleting it resets it).
-import { useEventListener } from '@vueuse/core'
 import { computed, nextTick, ref, shallowRef, watchEffect } from 'vue'
 import { toast } from 'vue-sonner'
 import { exampleTestCases } from '@/lib/examples'
@@ -261,11 +260,10 @@ reopen(projectList.value.find(p => p.id === storage.activeProjectId())?.id ?? pr
 // Another browser tab changed storage: re-read the project list and files,
 // and the open file if it was the one changed (our next edit would otherwise
 // overwrite theirs).
-useEventListener(window, 'storage', (ev: StorageEvent) => {
-  if (ev.key === null) return
-  const file = storage.fileOf(ev.key)
+storage.onChanged((key, value) => {
+  const file = storage.fileOf(key)
   if (!file) {
-    if (ev.key !== 'gtfs-projects') return
+    if (key !== 'gtfs-projects') return
     projectList.value = storage.projects()
     if (!currentProject.value) { // deleted there: don't keep saving into it
       activeId.value = ''
@@ -274,12 +272,12 @@ useEventListener(window, 'storage', (ev: StorageEvent) => {
     return
   }
   if (file.project !== activeProject.value || !currentProject.value) return
-  if (file.id === activeId.value && ev.newValue === null) {
+  if (file.id === activeId.value && value === null) {
     leaveDeleted(file.id)
     toast(t('toast.deletedElsewhere'))
-  } else if (file.id === activeId.value && ev.newValue !== null && ev.newValue !== M.toJSON(tc.value, 0)) {
+  } else if (file.id === activeId.value && value !== null && value !== M.toJSON(tc.value, 0)) {
     try {
-      reloadTestCase(M.fromJSON(ev.newValue))
+      reloadTestCase(M.fromJSON(value))
       toast(t('toast.changedElsewhere', { name: tc.value.name }))
     } catch { /* half-written or foreign value: keep ours */ }
   }

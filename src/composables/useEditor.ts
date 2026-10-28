@@ -42,12 +42,16 @@ const history = useManualRefHistory(tc, { capacity: 100, dump: JSON.stringify, p
 const dirty = computed(() => JSON.stringify(tc.value) !== history.last.value.snapshot)
 
 let saveFailed = false
-function persist() {
-  if (!activeId.value) return
-  const ok = storage.writeFile(activeProject.value, activeId.value, M.toJSON(tc.value, 0))
+function saved(ok: boolean) {
   // deferred: the first save runs before the toaster is mounted
   if (!ok && !saveFailed) setTimeout(() => toast.error(t('toast.saveFailed'), { duration: Infinity, closeButton: true }))
   saveFailed = !ok
+}
+// a background write failing (this file's or any other) counts as a failed save
+storage.onWriteFailed(() => saved(false))
+
+function persist() {
+  if (activeId.value) saved(storage.writeFile(activeProject.value, activeId.value, M.toJSON(tc.value, 0)))
 }
 
 function commit() {
@@ -96,10 +100,12 @@ export function setTab(next: 'arrange' | 'expected') {
 }
 
 // Opens a project file; each file has its own undo history, starting here.
-// Refuses (false) while the open file's last save failed, which would lose it.
+// Refuses (false) while the open file can't be saved, which would lose it: after a
+// failed save it's tried once more first (space may have been freed since).
 // Blank activeId first to leave a file without saving it (it is being deleted).
 export function openTestCase(project: string, id: string, next: TestCase): boolean {
   commit() // saves the file being left
+  if (saveFailed && activeId.value) saved(storage.writeFile(activeProject.value, activeId.value, M.toJSON(tc.value, 0)))
   if (saveFailed && activeId.value) {
     toast.error(t('toast.saveFailed'))
     return false
