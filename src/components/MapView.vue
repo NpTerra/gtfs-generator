@@ -7,6 +7,7 @@ import { computed, nextTick, ref, watch, watchEffect } from 'vue'
 import {
   addStation, canEdit, clickStation, editableModel, loadCount, pickLine, selection, tab, tc,
 } from '@/composables/useEditor'
+import { measure, measureClick, measured } from '@/composables/useMeasure'
 import {
   clampScale, cursorText, ensureVisible, fit, gridStep, screenToWorld, size, view, worldToScreen,
 } from '@/composables/useViewport'
@@ -76,6 +77,18 @@ const ghostLines = computed(() => ghost.value
   : [])
 
 const stations = computed(() => (model.value?.stations ?? []).map(s => ({ s, p: worldToScreen(s.x, s.y) })))
+
+// the measure tool's line, in screen coordinates, with its label in the middle
+const ruler = computed(() => {
+  const { a, b, distance } = measured.value
+  if (!a) return null
+  const pa = worldToScreen(a.x, a.y)
+  const pb = b ? worldToScreen(b.x, b.y) : null
+  return { pa, pb, mid: pb && { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 }, label: formatDistance(distance) }
+})
+function formatDistance(m: number) {
+  return m >= 1000 ? `${(m / 1000).toFixed(3)} km` : `${Number(m.toFixed(3))} m`
+}
 const ghostStations = computed(() => (ghost.value?.stations ?? []).map(s => ({ s, p: worldToScreen(s.x, s.y) })))
 
 // ---- camera: fit on load, keep visible on tab switch ----------------------------------
@@ -89,7 +102,7 @@ defineExpose({ fit: () => fit(model.value, act.value) })
 // ---- interaction: pan, pinch, wheel zoom, drag stations, double-click to add -----------
 
 type Drag =
-  | { type: 'pan'; startX: number; startY: number; cx: number; cy: number }
+  | { type: 'pan'; startX: number; startY: number; cx: number; cy: number; stationId?: number }
   | { type: 'station'; id: number; origX: number; origY: number; offX: number; offY: number; moved: boolean }
 
 let drag: Drag | null = null
@@ -137,7 +150,9 @@ function onPointerDown(ev: PointerEvent) {
   const pt = eventPoint(ev)
   const id = stationAt(ev)
   const station = id !== null && canEdit.value ? findStation(id) : undefined
-  if (station) {
+  if (measure.on) { // measuring: drags pan, a click (on pointer up) sets a point
+    drag = { type: 'pan', startX: pt.x, startY: pt.y, cx: view.cx, cy: view.cy, stationId: station?.id }
+  } else if (station) {
     const w = screenToWorld(pt.x, pt.y)
     drag = { type: 'station', id: station.id, origX: station.x, origY: station.y, offX: station.x - w.x, offY: station.y - w.y, moved: false }
   } else {
@@ -165,6 +180,11 @@ function onPointerMove(ev: PointerEvent) {
     cursorText.value = `x ${w.x.toFixed(1)}  y ${w.y.toFixed(1)}   lat ${gps.lat.toFixed(6)}  lon ${gps.lon.toFixed(6)}`
   } catch {
     cursorText.value = `x ${w.x.toFixed(1)}  y ${w.y.toFixed(1)}`
+  }
+
+  if (measure.on && measure.from && !measure.to) {
+    const id = stationAt(ev)
+    measure.hover = id !== null && findStation(id) ? { ...w, stationId: id } : w
   }
 
   if (drag?.type === 'pan') {
@@ -200,6 +220,10 @@ function liftPointer(ev: PointerEvent) {
 function onPointerUp(ev: PointerEvent) {
   if (liftPointer(ev)) return
   if (drag?.type === 'station' && !drag.moved) clickStation(drag.id)
+  if (drag?.type === 'pan' && measure.on) {
+    const pt = eventPoint(ev)
+    if (Math.hypot(pt.x - drag.startX, pt.y - drag.startY) < 4) measureClick({ ...screenToWorld(pt.x, pt.y), stationId: drag.stationId })
+  }
   drag = null
   panning.value = false
 }
@@ -220,7 +244,7 @@ function onWheel(ev: WheelEvent) {
 }
 
 function onDblClick(ev: MouseEvent) {
-  if (stationAt(ev) !== null || !canEdit.value) return
+  if (stationAt(ev) !== null || !canEdit.value || measure.on) return
   const pt = eventPoint(ev)
   const w = screenToWorld(pt.x, pt.y)
   addStation(snap(w.x, ev.shiftKey), snap(w.y, ev.shiftKey))
@@ -230,7 +254,7 @@ function onDblClick(ev: MouseEvent) {
 <template>
   <svg
     ref="svg" class="map block size-full touch-none select-none"
-    :class="[panning ? 'cursor-grabbing' : 'cursor-grab', tab === 'expected' && 'expected']"
+    :class="[panning ? 'cursor-grabbing' : measure.on ? 'cursor-crosshair' : 'cursor-grab', tab === 'expected' && 'expected']"
     @pointerdown="onPointerDown" @pointermove="onPointerMove" @pointerup="onPointerUp"
     @pointercancel="onPointerCancel" @pointerleave="cursorText = ''" @wheel.prevent="onWheel" @dblclick="onDblClick"
   >
@@ -280,6 +304,17 @@ function onDblClick(ev: MouseEvent) {
         <text :x="p.x + 10" :y="p.y - 8" class="station-label">{{ s.name }} <tspan class="station-id">(S{{ s.id }})</tspan></text>
       </template>
     </g>
+
+    <!-- last, so stations and their names never hide it (it ignores the pointer) -->
+    <g v-if="ruler" class="ruler">
+      <template v-if="ruler.pb">
+        <line :x1="ruler.pa.x" :y1="ruler.pa.y" :x2="ruler.pb.x" :y2="ruler.pb.y" class="ruler-halo" />
+        <line :x1="ruler.pa.x" :y1="ruler.pa.y" :x2="ruler.pb.x" :y2="ruler.pb.y" class="ruler-line" />
+      </template>
+      <circle :cx="ruler.pa.x" :cy="ruler.pa.y" r="4" class="ruler-end" />
+      <circle v-if="ruler.pb" :cx="ruler.pb.x" :cy="ruler.pb.y" r="4" class="ruler-end" />
+      <text v-if="ruler.mid" :x="ruler.mid.x" :y="ruler.mid.y - 8" text-anchor="middle" class="ruler-label">{{ ruler.label }}</text>
+    </g>
   </svg>
 </template>
 
@@ -308,7 +343,18 @@ function onDblClick(ev: MouseEvent) {
 .line-path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .line-path.act-target { filter: drop-shadow(0 0 3px color-mix(in oklch, var(--destructive) 80%, transparent)); }
 
+.ruler { pointer-events: none; }
+/* the halo keeps the ruler readable on top of a line of the same color */
+.ruler-halo { stroke: var(--map-bg); stroke-width: 6; stroke-linecap: round; }
+.ruler-line { stroke: var(--signal); stroke-width: 2; stroke-dasharray: 5 4; }
+.ruler-end { fill: var(--signal); stroke: var(--map-bg); stroke-width: 2; }
+.ruler-label {
+  fill: var(--signal); font-size: 12px; font-weight: 700; font-family: var(--font-mono);
+  paint-order: stroke; stroke: var(--map-bg); stroke-width: 4px;
+}
+
 .station-hit { fill: transparent; cursor: pointer; }
+.cursor-crosshair .station-hit, .cursor-crosshair .station-dot { cursor: crosshair; }
 .station-dot { fill: var(--map-bg); stroke: var(--foreground); stroke-width: 2.5; cursor: pointer; }
 .station-dot:hover, .station-dot.picking:hover { fill: var(--signal); }
 .station-dot.selected { fill: var(--signal); stroke: var(--foreground); stroke-width: 3; }

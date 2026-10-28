@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The center of the layout: toolbar (tabs, map tools) + map.
 import {
-  MaximizeIcon, PlusIcon, Redo2Icon, Undo2Icon,
+  MaximizeIcon, PlusIcon, Redo2Icon, RulerIcon, Undo2Icon,
 } from '@lucide/vue'
 import { ref } from 'vue'
 import MapView from '@/components/MapView.vue'
@@ -10,10 +10,13 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   addStation, canEdit, canRedo, canUndo, editableModel, pickLine, pickLineId, redo, setTab, tab, tc, undo,
 } from '@/composables/useEditor'
+import { measure, measured, toggleMeasure } from '@/composables/useMeasure'
 import { freeSpot } from '@/composables/useViewport'
 import { t } from '@/lib/i18n'
 
 const map = ref<InstanceType<typeof MapView>>()
+
+const num = (v: number, digits: number) => Number.isFinite(v) ? String(Number(v.toFixed(digits))) : '–'
 
 function addStationHere() {
   const p = freeSpot(editableModel.value.stations)
@@ -37,6 +40,14 @@ function addStationHere() {
         <Button variant="outline" size="sm" :disabled="!canEdit" title="Add a station in the middle of the map" @click="addStationHere">
           <PlusIcon /> <span class="hidden @2xl:inline">Station</span>
         </Button>
+        <Button
+          variant="outline" size="icon-sm" :disabled="!canEdit" :aria-pressed="measure.on"
+          :class="measure.on && 'border-signal bg-signal/10 text-link'"
+          title="Measure: click two stations or points to see their distance and coordinates (Esc to stop)" aria-label="Measure"
+          @click="toggleMeasure"
+        >
+          <RulerIcon />
+        </Button>
         <Button variant="outline" size="icon-sm" :disabled="!canUndo" title="Undo (Ctrl+Z)" aria-label="Undo" @click="undo"><Undo2Icon /></Button>
         <Button variant="outline" size="icon-sm" :disabled="!canRedo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" @click="redo"><Redo2Icon /></Button>
         <Button variant="outline" size="sm" title="Zoom to fit all stations" @click="map?.fit()">
@@ -53,6 +64,31 @@ function addStationHere() {
         class="absolute inset-0 flex items-center justify-center bg-background/90 p-8 text-center text-muted-foreground"
       >
         {{ t('map.exceptionMsg', { name: tc.expected.exception }) }}
+      </div>
+
+      <div
+        v-if="measure.on && canEdit"
+        class="absolute top-2.5 left-2.5 max-w-[calc(100%-20px)] rounded-xl border bg-popover px-3 py-2 text-[13px] text-popover-foreground shadow-lg"
+        aria-live="polite"
+      >
+        <p v-if="!measured.a" class="text-muted-foreground">{{ t('map.measureStart') }}</p>
+        <template v-else>
+          <table class="font-mono text-xs">
+            <tbody>
+              <tr v-for="[label, p] in [['From', measured.a], ['To', measured.b]] as const" :key="label">
+                <th class="pr-2 text-left font-sans font-semibold">{{ label }}</th>
+                <td v-if="p" class="pr-3 font-sans">{{ p.label }}</td>
+                <td v-if="p" class="pr-3">x {{ num(p.x, 3) }} y {{ num(p.y, 3) }}</td>
+                <td v-if="p">lat {{ num(p.lat, 7) }} lon {{ num(p.lon, 7) }}</td>
+                <td v-if="!p" colspan="3" class="font-sans text-muted-foreground">{{ t('map.measureNext') }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-if="measured.b" class="mt-1.5 font-semibold">
+            {{ num(measured.distance, 6) }} m
+            <span class="font-normal text-muted-foreground">(Δx {{ num(measured.dx, 6) }}, Δy {{ num(measured.dy, 6) }})</span>
+          </p>
+        </template>
       </div>
 
       <div

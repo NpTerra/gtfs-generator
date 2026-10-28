@@ -19,6 +19,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Toaster } from '@/components/ui/sonner'
 import { canEdit, deleteStation, editableModel, errorCount, pickLineId, problems, redo, selection, undo } from '@/composables/useEditor'
 import { exportJson } from '@/composables/useFileActions'
+import { escapeMeasure } from '@/composables/useMeasure'
 import '@/composables/useTheme' // applies the saved light/dark/system theme on load
 import { panels, type PanelName } from '@/composables/usePanels'
 
@@ -79,6 +80,7 @@ useEventListener(document, 'keydown', (ev: KeyboardEvent) => {
     ev.preventDefault()
     if (key === 'z' && !ev.shiftKey) undo(); else redo()
   } else if (key === 'escape') {
+    if (escapeMeasure()) return
     selection.value = null
     pickLineId.value = null
   } else if ((key === 'delete' || key === 'backspace') && selection.value !== null && canEdit.value) {

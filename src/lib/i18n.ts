@@ -21,6 +21,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     "pill.expected": "The faded drawing on the map is the Arrange model, for comparison.",
 
     "map.hint": "Drag stations to move them · double-click to add a station · scroll to zoom",
+    "map.measureStart": "Click a station or any point to measure from.",
+    "map.measureNext": "Click the second station or point (Esc to stop).",
     "map.picking": "Click stations to add them as stops to \"{name}\"",
     "map.exceptionMsg": "The expected result is the exception \"{name}\", so there is no expected model to draw. Switch back to the Arrange tab.",
 
@@ -105,6 +107,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     "pill.expected": "A térképen halványan az Arrange modell látszik, összehasonlításként.",
 
     "map.hint": "Az állomások húzással mozgathatók · dupla kattintás: új állomás · görgetés: nagyítás",
+    "map.measureStart": "Kattints egy állomásra vagy bármely pontra, ahonnan mérni akarsz.",
+    "map.measureNext": "Kattints a második állomásra vagy pontra (Esc: kilépés).",
     "map.picking": "Kattints az állomásokra, hogy megállóként a(z) „{name}” vonalhoz add őket",
     "map.exceptionMsg": "Az elvárt eredmény a(z) „{name}” kivétel, így nincs kirajzolható elvárt modell. Válts vissza az Arrange fülre.",
 
