@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The center of the layout: toolbar (tabs, map tools) + map.
 import {
-  Columns2Icon, LayersIcon, MaximizeIcon, PlusIcon, Redo2Icon, RulerIcon, TagIcon, Undo2Icon,
+  Columns2Icon, LassoIcon, LayersIcon, MaximizeIcon, PlusIcon, Redo2Icon, RulerIcon, SquareDashedMousePointerIcon, TagIcon, Undo2Icon,
 } from '@lucide/vue'
 import { ref } from 'vue'
 import CompareDialog from '@/components/CompareDialog.vue'
@@ -15,13 +15,19 @@ import {
   addStation, canEdit, canRedo, canUndo, editableModel, pickLine, pickLineId, redo, setTab, tab, tc, undo,
 } from '@/composables/useEditor'
 import { measure, measured, toggleMeasure } from '@/composables/useMeasure'
-import { freeSpot, labelMode, showArrangeGhost, type LabelMode } from '@/composables/useViewport'
+import { freeSpot, labelMode, selectTool, showArrangeGhost, type LabelMode } from '@/composables/useViewport'
 import { t } from '@/lib/i18n'
 
 const map = ref<InstanceType<typeof MapView>>()
 const comparing = ref(false)
 
 const num = (v: number, digits: number) => Number.isFinite(v) ? String(Number(v.toFixed(digits))) : '–'
+
+// one map tool at a time: a selection tool turns the ruler off (and the ruler turns it off)
+function toggleTool(tool: 'rect' | 'lasso') {
+  selectTool.value = selectTool.value === tool ? null : tool
+  if (selectTool.value && measure.on) toggleMeasure()
+}
 
 function addStationHere() {
   const p = freeSpot(editableModel.value.stations)
@@ -69,6 +75,22 @@ function addStationHere() {
         </Button>
         <Button variant="outline" size="sm" :disabled="!canEdit" title="Add a station in the middle of the map" @click="addStationHere">
           <PlusIcon /> <span class="hidden @2xl:inline">Station</span>
+        </Button>
+        <Button
+          variant="outline" size="icon-sm" :disabled="!canEdit" :aria-pressed="selectTool === 'rect'"
+          :class="selectTool === 'rect' && 'border-signal bg-signal/10 text-link'"
+          title="Rectangle select: drag over stations to select them (Shift adds; Shift + drag works without this too)" aria-label="Rectangle select"
+          @click="toggleTool('rect')"
+        >
+          <SquareDashedMousePointerIcon />
+        </Button>
+        <Button
+          variant="outline" size="icon-sm" :disabled="!canEdit" :aria-pressed="selectTool === 'lasso'"
+          :class="selectTool === 'lasso' && 'border-signal bg-signal/10 text-link'"
+          title="Lasso select: draw around stations to select them (Shift adds)" aria-label="Lasso select"
+          @click="toggleTool('lasso')"
+        >
+          <LassoIcon />
         </Button>
         <Button
           variant="outline" size="icon-sm" :disabled="!canEdit" :aria-pressed="measure.on"

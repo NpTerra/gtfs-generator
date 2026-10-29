@@ -4,6 +4,7 @@
 import { computed, reactive } from 'vue'
 import { xyToGPS } from '@/lib/geo'
 import { editableModel, pickLineId } from './useEditor'
+import { selectTool } from './useViewport'
 
 export interface MeasurePoint { x: number; y: number; stationId?: number }
 
@@ -17,7 +18,10 @@ export const measure = reactive({
 export function toggleMeasure() {
   measure.on = !measure.on
   measure.from = measure.to = measure.hover = null
-  if (measure.on) pickLineId.value = null // a click can't both pick a stop and measure
+  if (measure.on) { // a click can't both pick a stop (or start a selection) and measure
+    pickLineId.value = null
+    selectTool.value = null
+  }
 }
 
 // Esc: first drops the points, then leaves the tool; false if it was off

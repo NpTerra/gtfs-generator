@@ -19,7 +19,8 @@ export const activeProject = ref('')
 export const activeId = ref('') // file id within the project
 export const otherNames = ref<string[]>([]) // names of the project's other files (kept by useProject)
 export const tab = ref<'arrange' | 'expected'>('arrange') // which model the map + Model panel edit
-export const selection = ref<number | null>(null) // selected station id
+// the selected stations' ids (in the model being edited); replaced, never changed in place
+export const selection = shallowRef<ReadonlySet<number>>(new Set())
 export const pickLineId = ref<number | null>(null) // line that map clicks append stops to
 export const loadCount = ref(0) // bumped on every load, so the map can re-fit
 
@@ -34,6 +35,19 @@ export const problems = computed(() => {
 })
 export const errorCount = computed(() => problems.value.filter(p => p.level === 'error').length)
 export const pickLine = computed(() => editableModel.value.lines.find(l => l.id === pickLineId.value) ?? null)
+
+// only these ids; or add them, or toggle each (Shift / Ctrl / Cmd + click)
+export function select(ids: Iterable<number>, how: 'only' | 'add' | 'toggle' = 'only') {
+  const next = new Set(how === 'only' ? [] : selection.value)
+  for (const id of ids) {
+    if (how === 'toggle' && next.has(id)) next.delete(id)
+    else next.add(id)
+  }
+  selection.value = next
+}
+export function clearSelection() {
+  if (selection.value.size) selection.value = new Set()
+}
 
 // ---- undo history + autosave ---------------------------------------------------------
 // Steps share unchanged pieces (lib/history.ts). Edits are committed 300 ms after
@@ -107,7 +121,7 @@ export function undo() {
   future.value = [last(), ...future.value]
   past.value = past.value.slice(0, -1)
   setQuietly(restore(last()))
-  selection.value = null
+  clearSelection()
   persist()
 }
 
@@ -117,7 +131,7 @@ export function redo() {
   past.value = [...past.value, next]
   future.value = rest
   setQuietly(restore(next))
-  selection.value = null
+  clearSelection()
   persist()
 }
 
@@ -126,7 +140,7 @@ export function redo() {
 export function setTab(next: 'arrange' | 'expected') {
   if (tab.value === next) return
   tab.value = next
-  selection.value = null
+  clearSelection()
   pickLineId.value = null
 }
 
@@ -147,7 +161,7 @@ export function openTestCase(project: string, id: string, next: TestCase): boole
   storage.setActiveFileId(project, id)
   setQuietly(next)
   tab.value = 'arrange'
-  selection.value = null
+  clearSelection()
   pickLineId.value = null
   loadCount.value++
   past.value = [snapshot(next)]
@@ -161,7 +175,7 @@ export function openTestCase(project: string, id: string, next: TestCase): boole
 export function reloadTestCase(next: TestCase) {
   if (changed.value) record() // without saving: storage already has their version
   setQuietly(next)
-  selection.value = null
+  clearSelection()
   pickLineId.value = null
   changed.value = true
   record()
@@ -182,24 +196,38 @@ export function addStation(x: number, y: number) {
   if (!hasRoom(model.stations.length, 'stations')) return
   const id = M.nextId(model.stations)
   model.stations.push(M.makeStation(id, M.nextStationName(model.stations), x, y))
-  selection.value = id
+  select([id])
 }
 
 // a map click: either appends a stop (pick mode) or selects the station
 export function clickStation(id: number) {
-  if (!pickLine.value) selection.value = id
+  if (!pickLine.value) select([id])
   else if (hasRoomForStop(editableModel.value, pickLine.value)) M.appendStop(pickLine.value, id)
 }
 
-export async function deleteStation(model: Model, station: Station) {
-  const uses = model.lines.reduce((n, l) => n + l.stops.filter(s => s.stationId === station.id).length, 0)
-  if (uses > 0 && !await confirmDialog(t('dlg.deleteStation', { name: station.name, id: station.id, n: uses })))
-    return
-  for (const line of model.lines)
-    line.stops = line.stops.filter(s => s.stationId !== station.id)
-  model.stations.splice(model.stations.indexOf(station), 1)
-  if (selection.value === station.id) selection.value = null
+// moves the selected stations by dx, dy meters (rounded to 0.01 m, the finest grid)
+export function moveSelection(dx: number, dy: number) {
+  const round = (v: number) => Math.round(v * 100) / 100
+  for (const s of editableModel.value.stations)
+    if (selection.value.has(s.id)) try { M.setStationXY(s, round(s.x + dx), round(s.y + dy)) } catch { /* latitude at a pole */ }
 }
+
+// deletes the stations and their stops, asking first if lines stop at them
+export async function deleteStations(model: Model, stations: Station[]) {
+  if (stations.length === 0) return
+  const ids = new Set(stations.map(s => s.id))
+  const uses = model.lines.reduce((n, l) => n + l.stops.filter(s => ids.has(s.stationId)).length, 0)
+  const [one] = stations
+  const question = stations.length === 1
+    ? t('dlg.deleteStation', { name: one.name, id: one.id, n: uses })
+    : t('dlg.deleteStations', { count: stations.length, n: uses })
+  if (uses > 0 && !await confirmDialog(question)) return
+  for (const line of model.lines)
+    if (line.stops.some(s => ids.has(s.stationId))) line.stops = line.stops.filter(s => !ids.has(s.stationId))
+  model.stations = model.stations.filter(s => !ids.has(s.id))
+  selection.value = new Set([...selection.value].filter(id => !ids.has(id)))
+}
+export const deleteStation = (model: Model, station: Station) => deleteStations(model, [station])
 
 export async function deleteLine(model: Model, line: Line) {
   const uses = model.trips.filter(trip => trip.line === line.id).length
@@ -224,7 +252,7 @@ export function changeStationId(model: Model, station: Station, newId: number): 
   for (const line of model.lines)
     for (const stop of line.stops)
       if (stop.stationId === station.id) stop.stationId = newId
-  if (selection.value === station.id) selection.value = newId
+  if (selection.value.has(station.id)) selection.value = new Set([...selection.value].map(id => id === station.id ? newId : id))
   station.id = newId
   return true
 }
@@ -290,7 +318,7 @@ export function replaceModel(target: 'arrange' | 'expected', model: Model) {
     tc.value.arrange = model
   }
   tab.value = target
-  selection.value = null
+  clearSelection()
   pickLineId.value = null
   loadCount.value++ // the map re-fits to the new stations
   commit()

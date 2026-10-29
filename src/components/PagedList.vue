@@ -1,14 +1,14 @@
 <script setup lang="ts" generic="T extends { id: number }">
 // A Model panel list that stays fast with an imported city: a search field once
 // it gets long, and one page of PAGE matches at a time, so the panel never holds
-// more than that. The `pinned` item (e.g. the station selected on the map) is
-// always in the list.
+// more than that. The `pinned` items (e.g. the stations selected on the map) are
+// always in the list, on top.
 import { ChevronLeftIcon, ChevronRightIcon, SearchIcon } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 
 const PAGE = 50
-const props = defineProps<{ items: T[]; text: (item: T) => string; pinned?: number | null; noun: string }>()
+const props = defineProps<{ items: T[]; text: (item: T) => string; pinned?: readonly number[]; noun: string }>()
 
 const query = ref('')
 const page = ref(0)
@@ -22,8 +22,10 @@ const pages = computed(() => Math.max(1, Math.ceil(matches.value.length / PAGE))
 const first = computed(() => Math.min(page.value, pages.value - 1) * PAGE) // the list can shrink under the page
 const shown = computed(() => {
   const slice = matches.value.slice(first.value, first.value + PAGE)
-  const pin = props.pinned == null || slice.some(i => i.id === props.pinned) ? undefined : props.items.find(i => i.id === props.pinned)
-  return pin ? [pin, ...slice] : slice
+  const pinned = new Set(props.pinned)
+  if (!pinned.size) return slice
+  for (const i of slice) pinned.delete(i.id)
+  return [...props.items.filter(i => pinned.has(i.id)), ...slice]
 })
 const go = (delta: number) => { page.value = Math.max(0, Math.min(pages.value - 1, first.value / PAGE + delta)) }
 </script>

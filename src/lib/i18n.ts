@@ -31,6 +31,7 @@ const STRINGS: Record<Lang, Record<string, string>> = {
 
     "dlg.copyArrange": "Overwrite the current Expected model with a copy of Arrange?",
     "dlg.deleteStation": "\"{name}\" (S{id}) is used by {n} stop(s). Delete it and those stops?",
+    "dlg.deleteStations": "Lines stop {n} time(s) at these {count} stations. Delete them and those stops?",
     "dlg.deleteLine": "\"{name}\" (R{id}) has {n} trip(s). Delete the line and its trips?",
     "dlg.deleteFile": "Delete the test case \"{name}\"? This cannot be undone.",
     "dlg.renameFile": "New name for the test case (also the .zip and folder name):",
@@ -132,6 +133,7 @@ const STRINGS: Record<Lang, Record<string, string>> = {
 
     "dlg.copyArrange": "Felülírod a jelenlegi Expected modellt az Arrange másolatával?",
     "dlg.deleteStation": "A(z) „{name}” (S{id}) állomást {n} megálló használja. Törlöd az állomást a megállókkal együtt?",
+    "dlg.deleteStations": "Ezt a {count} állomást {n} megálló használja. Törlöd őket a megállókkal együtt?",
     "dlg.deleteLine": "A(z) „{name}” (R{id}) vonalhoz {n} menet tartozik. Törlöd a vonalat a meneteivel együtt?",
     "dlg.deleteFile": "Törlöd a(z) „{name}” tesztesetet? Ez nem vonható vissza.",
     "dlg.renameFile": "A teszteset új neve (egyben a .zip és a mappa neve):",

@@ -8,7 +8,7 @@ import PrefixField from '@/components/PrefixField.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { changeStationId, deleteStation, selection } from '@/composables/useEditor'
+import { changeStationId, deleteStation, select, selection } from '@/composables/useEditor'
 import type { CoordMode, Model, Station } from '@/lib/model'
 import { LIMITS, room, round6, setStationGPS, setStationXY } from '@/lib/model'
 
@@ -35,8 +35,8 @@ function setCoord(index: number, raw: string) {
   <div
     :id="`station-card-${station.id}`"
     class="@container flex flex-col gap-1.5 rounded-xl border bg-card p-2 lazy-card"
-    :class="selection === station.id && 'border-ring bg-selection'"
-    @click="selection = station.id"
+    :class="selection.has(station.id) && 'border-ring bg-selection'"
+    @click="ev => select([station.id], ev.shiftKey || ev.metaKey || ev.ctrlKey ? 'toggle' : 'only')"
   >
     <div class="flex items-center gap-1.5">
       <Input v-model="station.name" :maxlength="room(LIMITS.text, station.name)" placeholder="Name" aria-label="Station name" class="min-w-0 flex-1 font-semibold" />

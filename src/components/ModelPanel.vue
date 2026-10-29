@@ -12,7 +12,7 @@ import StationCard from '@/components/StationCard.vue'
 import IdInput from '@/components/IdInput.vue'
 import { Button } from '@/components/ui/button'
 import {
-  addCalendar, addLine, addStation, addTrip, calendarsFor, canEdit, editableModel, pickLineId, remove, selection, tab, tc,
+  addCalendar, addLine, addStation, addTrip, calendarsFor, canEdit, clearSelection, deleteStations, editableModel, pickLineId, remove, selection, tab, tc,
 } from '@/composables/useEditor'
 import { openGtfsImport } from '@/composables/useGtfsImport'
 import { freeSpot } from '@/composables/useViewport'
@@ -42,6 +42,7 @@ function addStationHere() {
 // list it would land on the last page; a search could hide it too); a new station is selected
 const added = ref<{ lines?: number; calendars?: number; trips?: number }>({})
 watch(model, () => { added.value = {} })
+const pin = (id: number | undefined) => id === undefined ? [] : [id]
 </script>
 
 <template>
@@ -68,14 +69,19 @@ watch(model, () => { added.value = {} })
       <p v-if="isExpected" class="m-3 mb-1 rounded-lg border border-l-4 border-l-signal bg-field px-3 py-2 text-[13px]">{{ t('pill.expected') }}</p>
 
       <PanelSection id="stations" title="Stations" :count="model.stations.length">
-        <PagedList v-slot="{ item }" :items="model.stations" :text="s => `${s.name} S${s.id}`" :pinned="selection" noun="stations">
+        <div v-if="selection.size > 1" class="flex items-center gap-2 rounded-lg bg-selection px-2.5 py-1.5 text-[13px]">
+          <span class="flex-1">{{ selection.size }} selected</span>
+          <Button variant="ghost" size="sm" class="text-destructive" @click="deleteStations(model, model.stations.filter(s => selection.has(s.id)))">Delete</Button>
+          <Button variant="ghost" size="sm" @click="clearSelection">Clear</Button>
+        </div>
+        <PagedList v-slot="{ item }" :items="model.stations" :text="s => `${s.name} S${s.id}`" :pinned="[...selection].slice(0, 50)" noun="stations">
           <StationCard :station="item" :model="model" />
         </PagedList>
         <Button variant="outline" size="sm" class="self-start" @click="addStationHere"><PlusIcon /> Add station</Button>
       </PanelSection>
 
       <PanelSection id="lines" title="Lines" :count="model.lines.length">
-        <PagedList v-slot="{ item }" :items="model.lines" :text="lineText" :pinned="added.lines ?? pickLineId" noun="lines">
+        <PagedList v-slot="{ item }" :items="model.lines" :text="lineText" :pinned="[...pin(pickLineId ?? undefined), ...pin(added.lines)]" noun="lines">
           <LineCard :line="item" :model="model" />
         </PagedList>
         <Button variant="outline" size="sm" class="self-start" @click="added = { lines: addLine(model) }"><PlusIcon /> Add line</Button>
@@ -83,7 +89,7 @@ watch(model, () => { added.value = {} })
 
       <PanelSection id="calendars" title="Calendars" :count="model.calendars.length">
         <p v-if="isExpected && model.calendars.length === 0" class="text-[13px] text-muted-foreground">{{ t('hint.calendarsInherit') }}</p>
-        <PagedList v-slot="{ item }" :items="model.calendars" :text="c => `C${c.id} ${c.start} ${c.end}`" :pinned="added.calendars" noun="calendars">
+        <PagedList v-slot="{ item }" :items="model.calendars" :text="c => `C${c.id} ${c.start} ${c.end}`" :pinned="pin(added.calendars)" noun="calendars">
           <CalendarCard :calendar="item" :model="model" />
         </PagedList>
         <Button variant="outline" size="sm" class="self-start" @click="added = { calendars: addCalendar(model) }"><PlusIcon /> Add calendar</Button>
@@ -92,7 +98,7 @@ watch(model, () => { added.value = {} })
       <PanelSection id="trips" title="Trips" :count="model.trips.length">
         <p class="text-[13px] text-muted-foreground">{{ t('hint.trips') }}</p>
         <!-- id | line | calendar | delete; the two selects wrap under each other when narrow -->
-        <PagedList v-slot="{ item: trip }" :items="model.trips" :text="tr => `T${tr.id} R${tr.line} C${tr.service} ${model.lines.find(l => l.id === tr.line)?.name ?? ''}`" :pinned="added.trips" noun="trips">
+        <PagedList v-slot="{ item: trip }" :items="model.trips" :text="tr => `T${tr.id} R${tr.line} C${tr.service} ${model.lines.find(l => l.id === tr.line)?.name ?? ''}`" :pinned="pin(added.trips)" noun="trips">
           <div class="flex flex-wrap items-center gap-1.5 rounded-xl border bg-card p-2 lazy-card">
             <IdInput :id="trip.id" prefix="T" label="Trip ID" :on-change-id="id => (trip.id = id, true)" />
             <RefSelect

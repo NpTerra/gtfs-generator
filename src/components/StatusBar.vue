@@ -16,7 +16,7 @@ const crumbs = computed(() => [
   currentProject.value?.name,
   tc.value.name + '.json',
   tab.value === 'expected' ? 'Expected model' : 'Arrange model',
-  editableModel.value.stations.find(s => s.id === selection.value)?.name,
+  selection.value.size > 1 ? `${selection.value.size} stations` : editableModel.value.stations.find(s => selection.value.has(s.id))?.name,
 ].filter(Boolean))
 </script>
 

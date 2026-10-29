@@ -8,16 +8,16 @@
 import { useDevicePixelRatio, useEventListener, useResizeObserver, useThrottleFn } from '@vueuse/core'
 import { computed, nextTick, onMounted, ref, useTemplateRef, watch, watchEffect } from 'vue'
 import {
-  addStation, canEdit, clickStation, editableModel, loadCount, selection, tab, tc,
+  addStation, canEdit, clearSelection, clickStation, editableModel, loadCount, moveSelection, pickLine, select, selection, tab, tc,
 } from '@/composables/useEditor'
 import { measure, measureClick, measured } from '@/composables/useMeasure'
 import { themeShown } from '@/composables/useTheme'
-import { clampScale, cursorText, labelMode, mainViewport, showArrangeGhost, type Viewport } from '@/composables/useViewport'
+import { clampScale, cursorText, labelMode, mainViewport, selectTool, showArrangeGhost, type Viewport } from '@/composables/useViewport'
 import { type Box, placeLabels } from '@/lib/labels'
 import { computeAct } from '@/lib/acts'
 import { xyToGPS } from '@/lib/geo'
 import type { Model, Station } from '@/lib/model'
-import { round6, setStationXY } from '@/lib/model'
+import { round6 } from '@/lib/model'
 import { secondNearest } from '@/lib/spacing'
 
 const props = withDefaults(defineProps<{ viewport?: Viewport; model?: Model | null }>(), { viewport: () => mainViewport })
@@ -37,12 +37,13 @@ const model = computed<Model | null>(() => readonly ? props.model ?? null : canE
 // tinted as Expected: the editor map on the Expected tab, a compare map showing that model
 const showsExpected = computed(() => readonly ? props.model === tc.value.expected.model : tab.value === 'expected')
 const ghost = computed(() => !readonly && showArrangeGhost.value && tab.value === 'expected' && model.value ? tc.value.arrange : null)
-// A station being dragged is drawn where the pointer has it, but the model only
-// changes when it's let go: the drag is one edit for validation, autosave and undo.
-const dragged = ref<{ id: number; x: number; y: number } | null>(null)
+// Selected stations being dragged are drawn where the pointer has them, but the
+// model only changes when they're let go: the drag is one edit for validation,
+// autosave and undo.
+const dragged = ref<{ dx: number; dy: number } | null>(null)
 const shown = computed<Model | null>(() => {
   const m = model.value, d = dragged.value
-  return m && d ? { ...m, stations: m.stations.map(s => s.id === d.id ? { ...s, x: d.x, y: d.y } : s) } : m
+  return m && d ? { ...m, stations: m.stations.map(s => selection.value.has(s.id) ? { ...s, x: s.x + d.dx, y: s.y + d.dy } : s) } : m
 })
 const act = computed(() => shown.value ? computeAct(shown.value, tc.value.act) : null)
 
@@ -234,7 +235,7 @@ const labelIds = computed<Set<number>>(() => {
   if (labelMode.value === 'none') return new Set()
   const real = labelBoxes.value.map(({ s, box, dot }) => ({
     id: s.id, box, dot,
-    priority: !readonly && selection.value === s.id ? 3 : act.value?.ringStationIds.has(s.id) ? 2 : 1,
+    priority: !readonly && selection.value.has(s.id) ? 3 : act.value?.ringStationIds.has(s.id) ? 2 : 1,
   }))
   const faded = ghostStations.value.map(({ s, box, dot }) => ({ id: GHOST + s.id, box, dot, priority: 1 }))
   if (labelMode.value === 'all') return new Set([...real, ...faded].filter(l => inView(l.box)).map(l => l.id))
@@ -280,8 +281,9 @@ defineExpose({ fit: () => fit(model.value, act.value) })
 // ---- interaction: pan, pinch, wheel zoom, drag stations, double-click to add -----------
 
 type Drag =
-  | { type: 'pan'; startX: number; startY: number; cx: number; cy: number; stationId?: number }
-  | { type: 'station'; id: number; offX: number; offY: number; moved: boolean }
+  | { type: 'pan'; startX: number; startY: number; cx: number; cy: number; stationId?: number; afterPinch?: true }
+  | { type: 'station'; id: number; offX: number; offY: number; startX: number; startY: number; moved: boolean }
+  | { type: 'shape'; startX: number; startY: number; stationId?: number }
 
 let drag: Drag | null = null
 const panning = ref(false)
@@ -289,6 +291,38 @@ const touches = new Map<number, { x: number; y: number }>() // active touch poin
 let pinch: { dist: number; scale: number; wx: number; wy: number } | null = null
 
 const snap = (v: number, fine: boolean) => { const step = fine ? 0.01 : 1; return Math.round(v / step) * step }
+// Shift, Ctrl or Cmd: a click adds or removes a station instead of selecting only it
+const toggles = (ev: MouseEvent) => ev.shiftKey || ev.metaKey || ev.ctrlKey
+
+// the rectangle or lasso being drawn, in screen coordinates
+const shape = ref<{ kind: 'rect' | 'lasso'; points: { x: number; y: number }[]; how: 'only' | 'add' } | null>(null)
+
+// the stations inside the finished shape (by their dots' centres)
+function stationsIn({ kind, points }: NonNullable<typeof shape.value>) {
+  const inside = kind === 'rect'
+    ? (x: number, y: number) => {
+        const [a, b] = [points[0], points[points.length - 1]]
+        return x >= Math.min(a.x, b.x) && x <= Math.max(a.x, b.x) && y >= Math.min(a.y, b.y) && y <= Math.max(a.y, b.y)
+      }
+    : (x: number, y: number) => { // even-odd rule: a ray to the right crosses the outline an odd number of times
+        let odd = false
+        for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+          const a = points[i], b = points[j]
+          if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) odd = !odd
+        }
+        return odd
+      }
+  const z = zoom.value, { x: px, y: py } = pan.value
+  return onScreen.value.filter(({ p }) => inside(p.x * z + px, p.y * z + py)).map(({ s }) => s.id)
+}
+
+// a click (not a drag): measuring, picking stops or selecting
+function clickAt(ev: PointerEvent, stationId: number | undefined) {
+  const pt = eventPoint(ev)
+  if (measure.on && !readonly) measureClick({ ...screenToWorld(pt.x, pt.y), stationId })
+  else if (stationId !== undefined) toggles(ev) && !pickLine.value ? select([stationId], 'toggle') : clickStation(stationId)
+  else if (!readonly && !toggles(ev)) clearSelection()
+}
 
 function eventPoint(ev: PointerEvent | MouseEvent | WheelEvent) {
   const r = canvas.value!.getBoundingClientRect()
@@ -321,8 +355,9 @@ function onPointerDown(ev: PointerEvent) {
   if (ev.pointerType === 'touch') {
     touches.set(ev.pointerId, eventPoint(ev))
     if (touches.size >= 2) {
-      // a second finger turns any drag into a pinch; a half-dragged station stays put
+      // a second finger turns any drag into a pinch; half-dragged stations stay put
       dragged.value = null
+      shape.value = null
       drag = null
       panning.value = false
       rebasePinch()
@@ -334,11 +369,16 @@ function onPointerDown(ev: PointerEvent) {
   const pt = eventPoint(ev)
   const id = stationAt(ev)
   const station = id !== null && canEdit.value && !readonly ? findStation(id) : undefined
+  // a selection tool, or Shift + drag from an empty spot: draw a rectangle or lasso
+  const tool = readonly || !canEdit.value ? null : selectTool.value ?? (ev.shiftKey && !station ? 'rect' : null)
   if (measure.on && !readonly) { // measuring: drags pan, a click (on pointer up) sets a point
     drag = { type: 'pan', startX: pt.x, startY: pt.y, cx: view.cx, cy: view.cy, stationId: station?.id }
-  } else if (station && selection.value === station.id) { // only the selected station moves, so a pan can't
+  } else if (station && selection.value.has(station.id) && !toggles(ev)) { // only selected stations move, so a pan can't
     const w = screenToWorld(pt.x, pt.y)
-    drag = { type: 'station', id: station.id, offX: station.x - w.x, offY: station.y - w.y, moved: false }
+    drag = { type: 'station', id: station.id, offX: station.x - w.x, offY: station.y - w.y, startX: pt.x, startY: pt.y, moved: false }
+  } else if (tool) {
+    drag = { type: 'shape', startX: pt.x, startY: pt.y, stationId: station?.id }
+    shape.value = { kind: tool, points: [pt], how: toggles(ev) ? 'add' : 'only' }
   } else {
     drag = { type: 'pan', startX: pt.x, startY: pt.y, cx: view.cx, cy: view.cy, stationId: station?.id }
     panning.value = true
@@ -376,12 +416,18 @@ function onPointerMove(ev: PointerEvent) {
     view.cx = drag.cx - (pt.x - drag.startX) / view.scale
     view.cy = drag.cy + (pt.y - drag.startY) / view.scale
   } else if (drag?.type === 'station') {
-    const at = dragged.value ?? findStation(drag.id)
-    const x = snap(w.x + drag.offX, ev.shiftKey), y = snap(w.y + drag.offY, ev.shiftKey)
-    if (at && (x !== at.x || y !== at.y)) {
-      drag.moved = true
-      dragged.value = { id: drag.id, x, y }
-    }
+    // the grabbed station snaps to the grid, the others keep their places relative to it;
+    // under 4 px it's still a click (zoomed in, a meter's snap is hundreds of px)
+    const grabbed = findStation(drag.id)
+    if (!grabbed || (!drag.moved && Math.hypot(pt.x - drag.startX, pt.y - drag.startY) < 4)) return
+    drag.moved = true
+    const dx = snap(w.x + drag.offX, ev.shiftKey) - grabbed.x, dy = snap(w.y + drag.offY, ev.shiftKey) - grabbed.y
+    if (dx !== (dragged.value?.dx ?? 0) || dy !== (dragged.value?.dy ?? 0)) dragged.value = { dx, dy }
+  } else if (drag?.type === 'shape' && shape.value) {
+    const { kind, points } = shape.value
+    const last = points[points.length - 1]
+    if (kind === 'rect') shape.value = { ...shape.value, points: [points[0], pt] }
+    else if (Math.hypot(pt.x - last.x, pt.y - last.y) > 3) shape.value = { ...shape.value, points: [...points, pt] }
   }
 }
 
@@ -395,7 +441,7 @@ function liftPointer(ev: PointerEvent) {
     if (touches.size === 1) {
       // hand off to a one-finger pan without a jump
       const [pt] = touches.values()
-      drag = { type: 'pan', startX: pt.x, startY: pt.y, cx: view.cx, cy: view.cy }
+      drag = { type: 'pan', startX: pt.x, startY: pt.y, cx: view.cx, cy: view.cy, afterPinch: true } // never a click
       panning.value = true
     }
   }
@@ -404,16 +450,19 @@ function liftPointer(ev: PointerEvent) {
 
 function onPointerUp(ev: PointerEvent) {
   if (liftPointer(ev)) return
-  if (drag?.type === 'station' && !drag.moved) clickStation(drag.id)
-  const d = dragged.value, s = d && findStation(d.id)
-  if (s) try { setStationXY(s, d.x, d.y) } catch { /* latitude at a pole */ }
+  if (drag?.type === 'station' && !drag.moved) clickStation(drag.id) // a click on a selected station: only it
+  if (dragged.value?.dx || dragged.value?.dy) moveSelection(dragged.value.dx, dragged.value.dy) // back where it began: no edit
   dragged.value = null
   const pt = eventPoint(ev)
-  if (drag?.type === 'pan' && Math.hypot(pt.x - drag.startX, pt.y - drag.startY) < 4) { // a click, not a pan
-    if (measure.on && !readonly) measureClick({ ...screenToWorld(pt.x, pt.y), stationId: drag.stationId })
-    else if (drag.stationId !== undefined) clickStation(drag.stationId)
-    else if (!readonly) selection.value = null
+  if (drag && drag.type !== 'station') {
+    // a click unless it went somewhere (a lasso can end where it started)
+    const { startX, startY } = drag
+    const went = drag.type === 'shape' && shape.value ? shape.value.points : [pt]
+    const still = went.every(q => Math.hypot(q.x - startX, q.y - startY) < 4)
+    if (still && !(drag.type === 'pan' && drag.afterPinch)) clickAt(ev, drag.stationId)
+    else if (drag.type === 'shape' && shape.value) select(stationsIn(shape.value), shape.value.how)
   }
+  shape.value = null
   drag = null
   panning.value = false
 }
@@ -421,6 +470,7 @@ function onPointerUp(ev: PointerEvent) {
 function onPointerCancel(ev: PointerEvent) {
   if (liftPointer(ev)) return
   dragged.value = null
+  shape.value = null
   drag = null
   panning.value = false
 }
@@ -588,7 +638,7 @@ function draw() {
   const editing = !readonly
   for (const { s, p } of onScreen.value) {
     const target = act.value?.ringStationIds.has(s.id) ?? false
-    const selected = editing && selection.value === s.id
+    const selected = editing && selection.value.has(s.id)
     if (target) {
       ctx.setLineDash([3, 3])
       ctx.strokeStyle = c['--destructive']
@@ -644,15 +694,36 @@ function draw() {
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   drawGridLabels(ctx, c, grid)
+
+  const sh = shape.value
+  if (sh && sh.points.length > 1) {
+    ctx.beginPath()
+    if (sh.kind === 'rect') {
+      const [a, b] = [sh.points[0], sh.points[sh.points.length - 1]]
+      ctx.rect(a.x, a.y, b.x - a.x, b.y - a.y)
+    } else {
+      sh.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))
+      ctx.closePath()
+    }
+    ctx.globalAlpha = 0.1
+    ctx.fillStyle = c['--signal']
+    ctx.fill()
+    ctx.globalAlpha = 1
+    ctx.setLineDash([4, 3])
+    ctx.strokeStyle = c['--signal']
+    ctx.lineWidth = 1.5
+    ctx.stroke()
+    ctx.setLineDash([])
+  }
 }
 
 // paints after Vue's updates, once per change of anything draw() reads
 watchEffect(draw, { flush: 'post' })
 
 const cursor = computed(() => panning.value ? 'grabbing'
-  : measure.on && !readonly ? 'crosshair'
-  : hovered.value === null ? 'grab'
-  : !readonly && selection.value === hovered.value ? 'move' : 'pointer')
+  : !readonly && hovered.value !== null && selection.value.has(hovered.value) ? 'move'
+  : (measure.on || selectTool.value) && !readonly ? 'crosshair'
+  : hovered.value === null ? 'grab' : 'pointer')
 const tooltip = computed(() => {
   const s = hovered.value === null ? undefined : stations.value.find(({ s }) => s.id === hovered.value)?.s
   return s ? `${s.name} (S${s.id})  x=${round6(s.x)} y=${round6(s.y)}` : undefined

@@ -87,6 +87,9 @@ export function freeSpot(stations: Station[]) {
 // whether the Expected tab draws the Arrange model faded underneath (a map toolbar toggle)
 export const showArrangeGhost = ref(true)
 
+// the map's selection tool: dragging draws a rectangle or a lasso instead of panning
+export const selectTool = ref<'rect' | 'lasso' | null>(null)
+
 // station names on the map: only those that fit (auto), every one, or none
 export type LabelMode = 'auto' | 'all' | 'none'
 export const labelMode = useLocalStorage<LabelMode>('gtfs-map-labels', 'auto')

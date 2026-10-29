@@ -17,9 +17,12 @@ import TestPanel from '@/components/TestPanel.vue'
 import ToolStripe from '@/components/ToolStripe.vue'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Toaster } from '@/components/ui/sonner'
-import { canEdit, deleteStation, editableModel, errorCount, pickLineId, problems, redo, selection, undo } from '@/composables/useEditor'
+import {
+  canEdit, clearSelection, deleteStations, editableModel, errorCount, moveSelection, pickLineId, problems, redo, select, selection, undo,
+} from '@/composables/useEditor'
 import { exportJson } from '@/composables/useFileActions'
 import { escapeMeasure } from '@/composables/useMeasure'
+import { selectTool } from '@/composables/useViewport'
 import { currentProject } from '@/composables/useProject'
 import '@/composables/useTheme' // applies the saved light/dark/system theme on load
 import { projectColors } from '@/lib/utils'
@@ -73,6 +76,7 @@ useEventListener(document, 'keydown', (ev: KeyboardEvent) => {
     if (!ev.repeat) exportJson()
     return
   }
+  if (ev.defaultPrevented) return // handled already (e.g. arrows moving focus in a toggle group)
   const el = ev.target as HTMLElement
   // menus and the Project panel have their own keys (Delete there means the file, not a station)
   if (el.isContentEditable || el.closest?.('textarea, [role="dialog"], [role="alertdialog"], [role="menu"], aside[aria-label="Project"]')) return
@@ -83,11 +87,21 @@ useEventListener(document, 'keydown', (ev: KeyboardEvent) => {
     if (key === 'z' && !ev.shiftKey) undo(); else redo()
   } else if (key === 'escape') {
     if (escapeMeasure()) return
-    selection.value = null
+    selectTool.value = null
+    clearSelection()
     pickLineId.value = null
-  } else if ((key === 'delete' || key === 'backspace') && selection.value !== null && canEdit.value) {
-    const station = editableModel.value.stations.find(s => s.id === selection.value)
-    if (station) { ev.preventDefault(); deleteStation(editableModel.value, station) }
+  } else if ((ev.ctrlKey || ev.metaKey) && key === 'a' && canEdit.value) {
+    ev.preventDefault()
+    select(editableModel.value.stations.map(s => s.id))
+  } else if (key.startsWith('arrow') && selection.value.size && canEdit.value && !ev.ctrlKey && !ev.metaKey) {
+    // nudge the selected stations: 1 m, Shift 10 m, Alt 0.01 m (a held key is one undo step)
+    ev.preventDefault()
+    const step = ev.shiftKey ? 10 : ev.altKey ? 0.01 : 1
+    const [dx, dy] = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, 1], arrowdown: [0, -1] }[key] ?? [0, 0]
+    moveSelection(dx * step, dy * step)
+  } else if ((key === 'delete' || key === 'backspace') && selection.value.size && canEdit.value) {
+    ev.preventDefault()
+    deleteStations(editableModel.value, editableModel.value.stations.filter(s => selection.value.has(s.id)))
   }
 })
 
