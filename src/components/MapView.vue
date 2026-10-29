@@ -178,6 +178,10 @@ const nearest = computed(() => medianSpacing(spacing.value, onScreen.value))
 const dotR = computed(() => dotSize(nearest.value))
 // packed too tight to point at one: plain markers, no clicking, hovering or dragging (zoom in for that)
 const markers = computed(() => dotR.value < 3)
+// packed tighter still (zoomed far out), dots would merge into one blob: only the lines are drawn,
+// plus selected stations and act targets
+const HIDE_BELOW = 6 // px between stations, median
+const noDots = computed(() => nearest.value < HIDE_BELOW)
 const lineW = computed(() => Math.max(1, Math.min(3.5, dotR.value / 2)))
 const compact = computed(() => nearest.value < 30) // smaller label text too
 const hovered = ref<number | null>(null) // its name is shown even where it doesn't fit
@@ -222,7 +226,8 @@ const labelBoxes = computed(() => {
 const GHOST = 1e9 // their label ids, apart from the model's station ids
 const ghostPoints = computed(() => (ghost.value?.stations ?? []).map(s => ({ s, p: toLayer(s.x, s.y) })))
 const ghostSpacing = computed(() => secondNearest(ghost.value?.stations ?? []))
-const ghostR = computed(() => Math.min(5, dotSize(medianSpacing(ghostSpacing.value, ghostPoints.value.filter(({ p }) => inView(around(p, 8)))))))
+const ghostNearest = computed(() => medianSpacing(ghostSpacing.value, ghostPoints.value.filter(({ p }) => inView(around(p, 8)))))
+const ghostR = computed(() => Math.min(5, dotSize(ghostNearest.value)))
 const ghostLineW = computed(() => Math.max(1, Math.min(3, ghostR.value / 2)))
 const ghostStations = computed(() => ghostPoints.value.map(({ s, p }) => {
   void fontsLoaded.value
@@ -629,7 +634,7 @@ function draw() {
     ctx.font = `italic 400 11px ${family()}`
     ctx.fillStyle = c['--foreground']
     for (const { s, p, x, y, dot } of ghostStations.value) {
-      if (inView(dot)) { circle(ctx, p.x, p.y, ghostR.value); ctx.stroke() }
+      if (inView(dot) && ghostNearest.value >= HIDE_BELOW) { circle(ctx, p.x, p.y, ghostR.value); ctx.stroke() }
       if (labelIds.value.has(GHOST + s.id)) ctx.fillText(s.name, x, y)
     }
     ctx.globalAlpha = 1
@@ -673,6 +678,7 @@ function draw() {
     fade(s.id)
     const target = act.value?.ringStationIds.has(s.id) ?? false
     const selected = editing && selection.value.has(s.id)
+    if (noDots.value && !target && !selected) continue
     if (target) {
       ctx.setLineDash([3, 3])
       ctx.strokeStyle = c['--destructive']
