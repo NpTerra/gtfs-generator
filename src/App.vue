@@ -2,7 +2,7 @@
 // Layout: resizable, collapsible panels around the map on desktop (sizes are
 // saved by the panel group), a pinned map with stacked panels on phones.
 import { useEventListener, useMediaQuery } from '@vueuse/core'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import 'vue-sonner/style.css'
 import { ChevronUpIcon, CircleXIcon, ClipboardListIcon, FolderIcon, TriangleAlertIcon, WaypointsIcon } from '@lucide/vue'
 import AppHeader from '@/components/AppHeader.vue'
@@ -20,7 +20,9 @@ import { Toaster } from '@/components/ui/sonner'
 import { canEdit, deleteStation, editableModel, errorCount, pickLineId, problems, redo, selection, undo } from '@/composables/useEditor'
 import { exportJson } from '@/composables/useFileActions'
 import { escapeMeasure } from '@/composables/useMeasure'
+import { currentProject } from '@/composables/useProject'
 import '@/composables/useTheme' // applies the saved light/dark/system theme on load
+import { projectColors } from '@/lib/utils'
 import { panels, type PanelName } from '@/composables/usePanels'
 
 const isPhone = useMediaQuery('(max-width: 767px)')
@@ -88,10 +90,16 @@ useEventListener(document, 'keydown', (ev: KeyboardEvent) => {
     if (station) { ev.preventDefault(); deleteStation(editableModel.value, station) }
   }
 })
+
+// the corner glow in the open project's colors (its icon's)
+const projectGlow = computed(() => {
+  const [from, to] = projectColors(currentProject.value?.name ?? '')
+  return { '--project-from': from, '--project-to': to }
+})
 </script>
 
 <template>
-  <div class="project-tint flex h-dvh flex-col bg-chrome">
+  <div class="project-tint flex h-dvh flex-col bg-chrome" :style="projectGlow">
     <AppHeader />
 
     <!-- phones: the map island stays pinned on top, the other islands scroll below it -->

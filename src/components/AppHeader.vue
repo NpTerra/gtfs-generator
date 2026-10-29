@@ -18,6 +18,7 @@ import { showPanel } from '@/composables/usePanels'
 import {
   currentProject, deleteProject, EXAMPLES, newProject, openProject, projects, renameProject,
 } from '@/composables/useProject'
+import { projectColors } from '@/lib/utils'
 
 const warningCount = computed(() => problems.value.length - errorCount.value)
 
@@ -27,8 +28,8 @@ function initials(name: string) {
   return ((words[0]?.[0] ?? '?') + (words[1]?.[0] ?? words[0]?.[1] ?? '')).toUpperCase()
 }
 function badgeStyle(name: string) {
-  const hue = [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 0)
-  return { background: `linear-gradient(135deg, hsl(${hue} 65% 55%), hsl(${(hue + 50) % 360} 65% 50%))` }
+  const [from, to] = projectColors(name)
+  return { background: `linear-gradient(135deg, ${from}, ${to})` }
 }
 </script>
 

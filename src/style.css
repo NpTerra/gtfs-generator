@@ -154,12 +154,13 @@
 }
 
 /* IntelliJ's project-color glow, spreading from the window's top-left corner in
-   the colors of the project tile. It is painted on the window background, so it
-   shows continuously around the (opaque) islands: toolbar, gaps, status bar. */
+   the colors of the open project's icon (App.vue sets them). It is painted on the
+   window background, so it shows continuously around the (opaque) islands:
+   toolbar, gaps, status bar. */
 .project-tint {
     background-image:
-        radial-gradient(ellipse 340px 120px at 0 0, color-mix(in oklch, #3871e1 calc(var(--project-tint) * 100%), transparent), transparent),
-        radial-gradient(ellipse 75vw 110vh at 0 0, color-mix(in oklch, #9f6cf5 calc(var(--project-tint) * 45%), transparent), transparent 70%);
+        radial-gradient(ellipse 340px 120px at 0 0, color-mix(in oklch, var(--project-from, #3871e1) calc(var(--project-tint) * 100%), transparent), transparent),
+        radial-gradient(ellipse 75vw 110vh at 0 0, color-mix(in oklch, var(--project-to, #9f6cf5) calc(var(--project-tint) * 45%), transparent), transparent 70%);
 }
 
 @layer base {
