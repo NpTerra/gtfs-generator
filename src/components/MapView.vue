@@ -12,7 +12,7 @@ import {
 } from '@/composables/useEditor'
 import { measure, measureClick, measured } from '@/composables/useMeasure'
 import { themeShown } from '@/composables/useTheme'
-import { clampScale, cursorText, labelMode, mainViewport, selectTool, showArrangeGhost, type Viewport } from '@/composables/useViewport'
+import { clampScale, cursorText, labelMode, lineHover, mainViewport, selectTool, showArrangeGhost, type Viewport } from '@/composables/useViewport'
 import { type Box, placeLabels } from '@/lib/labels'
 import { computeAct } from '@/lib/acts'
 import { xyToGPS } from '@/lib/geo'
@@ -127,6 +127,7 @@ const lines = computed(() => {
   const { drawable, sharing } = network.value
   return drawable.map(({ line, stops }) => {
     let d = ''
+    const segments: [number, number, number, number][] = [] // as drawn, for pointing at the line
     for (let i = 0; i < stops.length - 1; i++) {
       const on = sharing.get(pairKey(stops[i].id, stops[i + 1].id))!
       // side by side, but the whole bundle never gets wider than a dot (they overlap instead)
@@ -137,10 +138,11 @@ const lines = computed(() => {
       const len = Math.hypot(hi.x - lo.x, hi.y - lo.y) || 1
       const nx = -(hi.y - lo.y) / len * offset, ny = (hi.x - lo.x) / len * offset
       d += `M ${a.x + nx} ${a.y + ny} L ${b.x + nx} ${b.y + ny} `
+      segments.push([a.x + nx, a.y + ny, b.x + nx, b.y + ny])
     }
     const names = act.value?.lineNames
     const isTarget = !!names && (names.has(line.shortName.toLowerCase()) || names.has(line.name.toLowerCase()))
-    return { line, path: new Path2D(d), isTarget, empty: !d }
+    return { line, path: new Path2D(d), segments, isTarget, empty: !d }
   }).filter(l => !l.empty)
 })
 
@@ -344,6 +346,25 @@ function stationAt(ev: MouseEvent) {
 }
 const findStation = (id: number) => model.value?.stations.find(s => s.id === id)
 
+// With the toolbar's line hover on: the line nearest the pointer, within a few px of
+// its drawn stroke (where lines share a stretch, the one on the pointer's side)
+const hoveredLine = ref<number | null>(null)
+const LINE_REACH = 4 // px beyond the stroke
+function lineAt(ev: MouseEvent) {
+  const pt = eventPoint(ev)
+  const x = (pt.x - pan.value.x) / zoom.value, y = (pt.y - pan.value.y) / zoom.value
+  let found: number | null = null, nearest = lineW.value / 2 + LINE_REACH
+  for (const { line, segments } of lines.value)
+    for (const [ax, ay, bx, by] of segments) {
+      const dx = bx - ax, dy = by - ay
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)))
+      const d = Math.hypot(ax + t * dx - x, ay + t * dy - y)
+      if (d <= nearest) { nearest = d; found = line.id }
+    }
+  return found
+}
+watch(lineHover, () => { hoveredLine.value = null })
+
 // (re)anchor the pinch to the current first two fingers
 function rebasePinch() {
   const [a, b] = touches.values()
@@ -399,7 +420,10 @@ function onPointerMove(ev: PointerEvent) {
   }
   const pt = eventPoint(ev)
   const w = screenToWorld(pt.x, pt.y)
-  if (!drag) hovered.value = stationAt(ev)
+  if (!drag) {
+    hovered.value = stationAt(ev)
+    hoveredLine.value = lineHover.value && hovered.value === null ? lineAt(ev) : null
+  }
   if (!readonly) try {
     const gps = xyToGPS(w.x, w.y)
     cursorText.value = `x ${w.x.toFixed(1)}  y ${w.y.toFixed(1)}   lat ${gps.lat.toFixed(6)}  lon ${gps.lon.toFixed(6)}`
@@ -624,7 +648,8 @@ function draw() {
   }
   ctx.setLineDash([])
 
-  ctx.globalAlpha = 0.9
+  const pointed = lines.value.find(l => l.line.id === hoveredLine.value)
+  ctx.globalAlpha = pointed ? 0.25 : 0.9 // a hovered line stands out from the faded rest
   for (const l of lines.value) {
     ctx.strokeStyle = l.line.color || '#555'
     ctx.lineWidth = l.isTarget ? lineW.value + 1.5 : lineW.value
@@ -633,10 +658,19 @@ function draw() {
     ctx.shadowBlur = 0
   }
   ctx.globalAlpha = 1
+  if (pointed) { // on top, a little wider
+    ctx.strokeStyle = pointed.line.color || '#555'
+    ctx.lineWidth = lineW.value + 2
+    ctx.stroke(pointed.path)
+  }
 
   const r = dotR.value
   const editing = !readonly
+  // a hovered line's stations stay, the rest fade with the other lines
+  const onPointed = pointed && new Set(pointed.line.stops.map(st => st.stationId))
+  const fade = (id: number) => { ctx.globalAlpha = onPointed && !onPointed.has(id) ? 0.25 : 1 }
   for (const { s, p } of onScreen.value) {
+    fade(s.id)
     const target = act.value?.ringStationIds.has(s.id) ?? false
     const selected = editing && selection.value.has(s.id)
     if (target) {
@@ -659,17 +693,20 @@ function draw() {
     ctx.lineWidth = selected ? 3 : r < 5 ? 1.75 : 2.5
     ctx.stroke()
   }
+  ctx.globalAlpha = 1
 
   // names last, above every dot; the hovered one on top of the others
   const [nameSize, idSize, halo] = compact.value ? [11, 9.5, 3] : [13, 11, 4]
   const nameFont = `700 ${nameSize}px ${family()}`, idFont = `500 ${idSize}px ${family()}`
   for (const { s, p } of labelled.value) {
+    fade(s.id)
     const x = p.x + r + 3, y = p.y - r - 1
     ctx.font = nameFont
     haloText(ctx, s.name, x, y, c['--foreground'], c['--map-bg'], halo)
     ctx.font = idFont
     haloText(ctx, `(S${s.id})`, x + textWidth(s.name + ' ', nameFont), y, c['--muted-foreground'], c['--map-bg'], halo)
   }
+  ctx.globalAlpha = 1
 
   const rl = ruler.value
   if (rl) {
@@ -726,7 +763,9 @@ const cursor = computed(() => panning.value ? 'grabbing'
   : hovered.value === null ? 'grab' : 'pointer')
 const tooltip = computed(() => {
   const s = hovered.value === null ? undefined : stations.value.find(({ s }) => s.id === hovered.value)?.s
-  return s ? `${s.name} (S${s.id})  x=${round6(s.x)} y=${round6(s.y)}` : undefined
+  if (s) return `${s.name} (S${s.id})  x=${round6(s.x)} y=${round6(s.y)}`
+  const l = lines.value.find(l => l.line.id === hoveredLine.value)?.line
+  return l ? `${l.shortName && l.shortName !== l.name ? l.shortName + ' ' : ''}${l.name} (R${l.id})` : undefined
 })
 </script>
 
@@ -735,7 +774,7 @@ const tooltip = computed(() => {
     <canvas
       ref="canvas" class="absolute inset-0 block size-full" :style="{ cursor }" :title="tooltip"
       @pointerdown="onPointerDown" @pointermove="onPointerMove" @pointerup="onPointerUp"
-      @pointercancel="onPointerCancel" @pointerleave="hovered = null; readonly || (cursorText = '')" @wheel.prevent="onWheel" @dblclick="onDblClick"
+      @pointercancel="onPointerCancel" @pointerleave="hovered = null; hoveredLine = null; readonly || (cursorText = '')" @wheel.prevent="onWheel" @dblclick="onDblClick"
     />
     <!-- reads the theme's colors for the canvas -->
     <span ref="probe" class="hidden" aria-hidden="true" />

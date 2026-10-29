@@ -94,5 +94,8 @@ export const selectTool = ref<'rect' | 'lasso' | null>(null)
 export type LabelMode = 'auto' | 'all' | 'none'
 export const labelMode = useLocalStorage<LabelMode>('gtfs-map-labels', 'auto')
 
+// hovering a line names it and highlights it over the faded rest (a map toolbar toggle)
+export const lineHover = useLocalStorage('gtfs-map-line-hover', false)
+
 // the map position under the mouse, shown in the status bar
 export const cursorText = ref('')

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The center of the layout: toolbar (tabs, map tools) + map.
 import {
-  Columns2Icon, LassoIcon, LayersIcon, MaximizeIcon, PlusIcon, Redo2Icon, RulerIcon, SquareDashedMousePointerIcon, TagIcon, Undo2Icon,
+  Columns2Icon, LassoIcon, LayersIcon, MaximizeIcon, PlusIcon, Redo2Icon, RouteIcon, RulerIcon, SquareDashedMousePointerIcon, TagIcon, Undo2Icon,
 } from '@lucide/vue'
 import { ref } from 'vue'
 import CompareDialog from '@/components/CompareDialog.vue'
@@ -15,7 +15,7 @@ import {
   addStation, canEdit, canRedo, canUndo, editableModel, pickLine, pickLineId, redo, setTab, tab, tc, undo,
 } from '@/composables/useEditor'
 import { measure, measured, toggleMeasure } from '@/composables/useMeasure'
-import { freeSpot, labelMode, selectTool, showArrangeGhost, type LabelMode } from '@/composables/useViewport'
+import { freeSpot, labelMode, lineHover, selectTool, showArrangeGhost, type LabelMode } from '@/composables/useViewport'
 import { t } from '@/lib/i18n'
 
 const map = ref<InstanceType<typeof MapView>>()
@@ -70,6 +70,12 @@ function addStationHere() {
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>
+        <Button
+          variant="outline" size="icon-sm" :aria-pressed="lineHover" :class="lineHover && 'border-signal bg-signal/10 text-link'"
+          title="Line names on hover: highlights the line under the pointer" aria-label="Line names on hover" @click="lineHover = !lineHover"
+        >
+          <RouteIcon />
+        </Button>
         <Button variant="outline" size="icon-sm" title="Compare Arrange and Expected side by side" aria-label="Compare side by side" @click="comparing = true">
           <Columns2Icon />
         </Button>
