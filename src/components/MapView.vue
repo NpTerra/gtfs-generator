@@ -37,7 +37,14 @@ const model = computed<Model | null>(() => readonly ? props.model ?? null : canE
 // tinted as Expected: the editor map on the Expected tab, a compare map showing that model
 const showsExpected = computed(() => readonly ? props.model === tc.value.expected.model : tab.value === 'expected')
 const ghost = computed(() => !readonly && showArrangeGhost.value && tab.value === 'expected' && model.value ? tc.value.arrange : null)
-const act = computed(() => model.value ? computeAct(model.value, tc.value.act) : null)
+// A station being dragged is drawn where the pointer has it, but the model only
+// changes when it's let go: the drag is one edit for validation, autosave and undo.
+const dragged = ref<{ id: number; x: number; y: number } | null>(null)
+const shown = computed<Model | null>(() => {
+  const m = model.value, d = dragged.value
+  return m && d ? { ...m, stations: m.stations.map(s => s.id === d.id ? { ...s, x: d.x, y: d.y } : s) } : m
+})
+const act = computed(() => shown.value ? computeAct(shown.value, tc.value.act) : null)
 
 // ---- what to draw ------------------------------------------------------------------
 
@@ -97,9 +104,9 @@ const pairKey = (a: number, b: number) => a < b ? `${a}-${b}` : `${b}-${a}`
 // the drawable lines with their stations, and which lines share each stretch;
 // only changes with the model, not on every pan frame
 const network = computed(() => {
-  if (!model.value) return null
-  const byId = new Map(model.value.stations.map(s => [s.id, s]))
-  const drawable = model.value.lines.map(line => ({
+  if (!shown.value) return null
+  const byId = new Map(shown.value.stations.map(s => [s.id, s]))
+  const drawable = shown.value.lines.map(line => ({
     line, stops: line.stops.map(st => byId.get(st.stationId)).filter(s => s !== undefined),
   })).filter(d => d.stops.length >= 2)
   const sharing = new Map<string, number[]>() // stretch -> ids of the lines on it, in line order
@@ -146,7 +153,7 @@ const ghostLines = computed(() => {
   }).filter(g => !g.empty)
 })
 
-const stations = computed(() => (model.value?.stations ?? []).map(s => ({ s, p: toLayer(s.x, s.y) })))
+const stations = computed(() => (shown.value?.stations ?? []).map(s => ({ s, p: toLayer(s.x, s.y) })))
 
 // ---- crowded maps: smaller dots, and only the names that fit ----------------------------
 
@@ -274,7 +281,7 @@ defineExpose({ fit: () => fit(model.value, act.value) })
 
 type Drag =
   | { type: 'pan'; startX: number; startY: number; cx: number; cy: number; stationId?: number }
-  | { type: 'station'; id: number; origX: number; origY: number; offX: number; offY: number; moved: boolean }
+  | { type: 'station'; id: number; offX: number; offY: number; moved: boolean }
 
 let drag: Drag | null = null
 const panning = ref(false)
@@ -314,11 +321,8 @@ function onPointerDown(ev: PointerEvent) {
   if (ev.pointerType === 'touch') {
     touches.set(ev.pointerId, eventPoint(ev))
     if (touches.size >= 2) {
-      // a second finger turns any drag into a pinch; undo a half-dragged station
-      if (drag?.type === 'station' && drag.moved) {
-        const s = findStation(drag.id)
-        if (s) setStationXY(s, drag.origX, drag.origY)
-      }
+      // a second finger turns any drag into a pinch; a half-dragged station stays put
+      dragged.value = null
       drag = null
       panning.value = false
       rebasePinch()
@@ -334,7 +338,7 @@ function onPointerDown(ev: PointerEvent) {
     drag = { type: 'pan', startX: pt.x, startY: pt.y, cx: view.cx, cy: view.cy, stationId: station?.id }
   } else if (station && selection.value === station.id) { // only the selected station moves, so a pan can't
     const w = screenToWorld(pt.x, pt.y)
-    drag = { type: 'station', id: station.id, origX: station.x, origY: station.y, offX: station.x - w.x, offY: station.y - w.y, moved: false }
+    drag = { type: 'station', id: station.id, offX: station.x - w.x, offY: station.y - w.y, moved: false }
   } else {
     drag = { type: 'pan', startX: pt.x, startY: pt.y, cx: view.cx, cy: view.cy, stationId: station?.id }
     panning.value = true
@@ -372,11 +376,11 @@ function onPointerMove(ev: PointerEvent) {
     view.cx = drag.cx - (pt.x - drag.startX) / view.scale
     view.cy = drag.cy + (pt.y - drag.startY) / view.scale
   } else if (drag?.type === 'station') {
-    const s = findStation(drag.id)
-    const nx = snap(w.x + drag.offX, ev.shiftKey), ny = snap(w.y + drag.offY, ev.shiftKey)
-    if (s && (nx !== s.x || ny !== s.y)) {
+    const at = dragged.value ?? findStation(drag.id)
+    const x = snap(w.x + drag.offX, ev.shiftKey), y = snap(w.y + drag.offY, ev.shiftKey)
+    if (at && (x !== at.x || y !== at.y)) {
       drag.moved = true
-      try { setStationXY(s, nx, ny) } catch { /* latitude at a pole */ }
+      dragged.value = { id: drag.id, x, y }
     }
   }
 }
@@ -401,6 +405,9 @@ function liftPointer(ev: PointerEvent) {
 function onPointerUp(ev: PointerEvent) {
   if (liftPointer(ev)) return
   if (drag?.type === 'station' && !drag.moved) clickStation(drag.id)
+  const d = dragged.value, s = d && findStation(d.id)
+  if (s) try { setStationXY(s, d.x, d.y) } catch { /* latitude at a pole */ }
+  dragged.value = null
   const pt = eventPoint(ev)
   if (drag?.type === 'pan' && Math.hypot(pt.x - drag.startX, pt.y - drag.startY) < 4) { // a click, not a pan
     if (measure.on && !readonly) measureClick({ ...screenToWorld(pt.x, pt.y), stationId: drag.stationId })
@@ -413,6 +420,7 @@ function onPointerUp(ev: PointerEvent) {
 
 function onPointerCancel(ev: PointerEvent) {
   if (liftPointer(ev)) return
+  dragged.value = null
   drag = null
   panning.value = false
 }

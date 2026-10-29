@@ -18,6 +18,7 @@ import { exportAll, exportJson, generateAll, importFiles, pickAndImport } from '
 import {
   copyToProject, currentProject, deleteFile, duplicateFile, fileTestCase, files, newFile, openFile, projects, renameFile, restore, trash,
 } from '@/composables/useProject'
+import { fileWeight } from '@/lib/model'
 
 const menuFor = ref<string | null>(null) // file whose action menu is open
 const otherProjects = computed(() => projects.value.filter(p => p.id !== currentProject.value?.id))
@@ -29,6 +30,12 @@ function onKey(ev: KeyboardEvent, id: string) {
   ev.preventDefault()
   ev.stopPropagation() // not the editor's shortcuts (Delete would also remove the selected station)
 }
+
+// the file icon's color says how heavy a test case is (traffic light)
+const WEIGHT_COLOR = { light: 'text-ok', heavy: 'text-warn', huge: 'text-destructive' }
+const sizeOf = (chars: number) => chars < 1000 ? `${chars} B` : chars < 1e6 ? `${(chars / 1000).toFixed(1)} kB` : `${(chars / 1e6).toFixed(1)} MB`
+const fileTitle = (f: { name: string; errors: number; chars: number }) =>
+  `${f.name}.json, ${sizeOf(f.chars)}${f.errors ? `: ${f.errors} error(s)` : ''}`
 
 const timeOf = (at: number) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
@@ -105,10 +112,10 @@ function onDrop(ev: DragEvent) {
       >
         <button
           type="button" class="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-md pl-6 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          :title="f.errors ? `${f.name}.json: ${f.errors} error(s)` : `${f.name}.json`" :aria-current="f.id === activeId || undefined"
+          :title="fileTitle(f)" :aria-current="f.id === activeId || undefined"
           @click="openFile(f.id)" @keydown="onKey($event, f.id)"
         >
-          <FileJsonIcon class="size-4 shrink-0 text-warn" />
+          <FileJsonIcon class="size-4 shrink-0" :class="WEIGHT_COLOR[fileWeight(f.chars)]" />
           <span class="truncate" :class="f.errors > 0 && 'text-destructive underline decoration-destructive decoration-wavy underline-offset-3'">
             {{ f.name }}<span class="text-muted-foreground">.json</span>
           </span>

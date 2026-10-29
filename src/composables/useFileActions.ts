@@ -71,7 +71,13 @@ export async function importFiles(list: Iterable<File>) {
       failed.push(file.name)
     }
   }
-  const added = cases.filter((next, i) => addFile(next, { open: i === cases.length - 1 }))
+  // too big for the editor (it would crawl): skipped, with what's over
+  const fitting = cases.filter((next) => {
+    const over = [...M.countsOverLimit(next.arrange), ...M.countsOverLimit(next.expected.model)]
+    if (over.length) toast.error(t('toast.fileTooBig', { name: next.name, details: over.map(o => `${o.n} ${t('count.' + o.what)} (max ${o.max})`).join(', ') }))
+    return over.length === 0
+  })
+  const added = fitting.filter((next, i) => addFile(next, { open: i === fitting.length - 1 }))
   if (added.length === 1) toast(t('toast.importedOne', { name: added[0].name }))
   else if (added.length > 1) toast(t('toast.importedMany', { n: added.length }))
   if (failed.length) toast.error(t('toast.importSkipped', { files: failed.join(', ') }))

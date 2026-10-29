@@ -16,7 +16,7 @@ import { confirmDialog, promptDialog } from './useConfirm'
 import { activeId, activeProject, openTestCase, otherNames, problems, reloadTestCase, tc } from './useEditor'
 import { showPanel } from './usePanels'
 
-export interface ProjectFile { id: string; name: string; errors: number; unreadable?: boolean }
+export interface ProjectFile { id: string; name: string; errors: number; chars: number; unreadable?: boolean } // chars: stored JSON
 
 export const EXAMPLES = 'examples'
 const byName = (a: { name: string }, b: { name: string }) =>
@@ -114,15 +114,18 @@ function refresh() {
   stored.value = storage.fileIds(project).filter(id => id !== activeId.value).map((id) => {
     const file = read(project, id)
     return file
-      ? { id, name: file.name, errors: M.validate(file).filter(p => p.level === 'error').length }
-      : { id, name: 'unreadable-' + id, errors: 1, unreadable: true }
+      ? { id, name: file.name, errors: M.validate(file).filter(p => p.level === 'error').length, chars: storage.readFile(project, id)?.length ?? 0 }
+      : { id, name: 'unreadable-' + id, errors: 1, chars: 0, unreadable: true }
   })
 }
 
 // every file, the open one live, sorted by name like a project tree
 export const files = computed<ProjectFile[]>(() => [
   ...stored.value,
-  { id: activeId.value, name: tc.value.name, errors: problems.value.filter(p => p.level === 'error').length },
+  { // its size as last saved (re-read on every edit, so at most one save behind)
+    id: activeId.value, name: tc.value.name, errors: problems.value.filter(p => p.level === 'error').length,
+    chars: storage.readFile(activeProject.value, activeId.value)?.length ?? M.toJSON(tc.value, 0).length,
+  },
 ].sort(byName))
 
 watchEffect(() => { otherNames.value = stored.value.map(f => f.name) })

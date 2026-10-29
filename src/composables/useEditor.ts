@@ -1,9 +1,10 @@
 // The editor's shared state and actions. Module-level refs make this a
 // singleton "store": every component that imports it sees the same state.
 // (Pinia is the official store library, worth adopting once this grows.)
-import { useEventListener, useManualRefHistory, watchDebounced } from '@vueuse/core'
-import { computed, ref } from 'vue'
+import { useDebounceFn, useEventListener } from '@vueuse/core'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { toast } from 'vue-sonner'
+import { restore, sameSnapshot, type Snapshot, snapshot } from '@/lib/history'
 import { t } from '@/lib/i18n'
 import type { Calendar, Line, Model, Station, TestCase, Trip } from '@/lib/model'
 import * as M from '@/lib/model'
@@ -35,11 +36,39 @@ export const errorCount = computed(() => problems.value.filter(p => p.level === 
 export const pickLine = computed(() => editableModel.value.lines.find(l => l.id === pickLineId.value) ?? null)
 
 // ---- undo history + autosave ---------------------------------------------------------
-// Snapshots are JSON strings. Edits are committed 300 ms after they stop, so a
-// burst of typing (or one station drag) becomes a single undo step.
+// Steps share unchanged pieces (lib/history.ts). Edits are committed 300 ms after
+// they stop, so a burst of typing becomes a single undo step.
 
-const history = useManualRefHistory(tc, { capacity: 100, dump: JSON.stringify, parse: JSON.parse })
-const dirty = computed(() => JSON.stringify(tc.value) !== history.last.value.snapshot)
+const CAPACITY = 100
+const past = shallowRef<Snapshot[]>([]) // its last step is the state committed last
+const future = shallowRef<Snapshot[]>([])
+const changed = ref(false) // edited since the last step
+const last = () => past.value[past.value.length - 1]
+
+// Any edit sets `changed`. A test case put in place by undo, redo or opening a
+// file (`quiet`) doesn't count; edits to it afterwards do (same object then).
+let quiet: TestCase | null = null
+const commitSoon = useDebounceFn(() => commit(), 300)
+watch(tc, (now, before) => {
+  if (now !== before && now === quiet) return
+  changed.value = true
+  commitSoon()
+}, { deep: true })
+
+function setQuietly(next: TestCase) {
+  quiet = next
+  tc.value = next
+}
+
+// a step for the current state, unless it's the last one again
+function record() {
+  changed.value = false
+  const step = snapshot(tc.value, last())
+  if (last() && sameSnapshot(step, last())) return false
+  past.value = [...past.value, step].slice(-CAPACITY - 1)
+  future.value = []
+  return true
+}
 
 let saveFailed = false
 function saved(ok: boolean) {
@@ -55,11 +84,8 @@ function persist() {
 }
 
 function commit() {
-  if (!dirty.value) return
-  history.commit()
-  persist()
+  if (changed.value && record()) persist()
 }
-watchDebounced(tc, commit, { deep: true, debounce: 300 })
 // the last edit before a reload or closing the tab is still within the debounce
 useEventListener('pagehide', commit)
 
@@ -72,20 +98,25 @@ if (typeof document !== 'undefined')
     document.addEventListener(type, () => setTimeout(commit), true)
 
 // a pending (not yet committed) edit is undoable too
-export const canUndo = computed(() => history.canUndo.value || dirty.value)
-export const canRedo = computed(() => history.canRedo.value && !dirty.value)
+export const canUndo = computed(() => past.value.length > 1 || changed.value)
+export const canRedo = computed(() => future.value.length > 0 && !changed.value)
 
 export function undo() {
   commit()
-  if (!history.canUndo.value) return
-  history.undo()
+  if (past.value.length < 2) return
+  future.value = [last(), ...future.value]
+  past.value = past.value.slice(0, -1)
+  setQuietly(restore(last()))
   selection.value = null
   persist()
 }
 
 export function redo() {
   if (!canRedo.value) return
-  history.redo()
+  const [next, ...rest] = future.value
+  past.value = [...past.value, next]
+  future.value = rest
+  setQuietly(restore(next))
   selection.value = null
   persist()
 }
@@ -114,24 +145,26 @@ export function openTestCase(project: string, id: string, next: TestCase): boole
   activeId.value = id
   storage.setActiveProjectId(project)
   storage.setActiveFileId(project, id)
-  tc.value = next
+  setQuietly(next)
   tab.value = 'arrange'
   selection.value = null
   pickLineId.value = null
   loadCount.value++
-  history.commit()
-  history.clear()
+  past.value = [snapshot(next)]
+  future.value = []
+  changed.value = false
   persist()
   return true
 }
 
 // a newer version saved elsewhere (another browser tab): undoable, like an edit
 export function reloadTestCase(next: TestCase) {
-  if (dirty.value) history.commit() // without saving: storage already has their version
-  tc.value = next
+  if (changed.value) record() // without saving: storage already has their version
+  setQuietly(next)
   selection.value = null
   pickLineId.value = null
-  history.commit()
+  changed.value = true
+  record()
 }
 
 // false (with a toast) when a list already holds as many as the editor handles

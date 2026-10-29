@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import * as acts from '../src/lib/acts'
 import * as csv from '../src/lib/csv'
 import * as gtfs from '../src/lib/gtfs'
+import * as history from '../src/lib/history'
 import { placeLabels } from '../src/lib/labels'
 import { t } from '../src/lib/i18n'
 import * as M from '../src/lib/model'
@@ -262,3 +263,29 @@ function rows(name: string, list: Record<string, string>[]) {
   }
   return list.map(key[name]).sort()
 }
+
+it('undo steps restore exactly and share unchanged pieces', () => {
+  const tc = M.fromJSON(readFileSync(join(EXAMPLES, 'example3_divertLine.json'), 'utf8'))
+  const a = history.snapshot(tc)
+  expect(history.restore(a)).toEqual(tc)
+  tc.arrange.stations[1].x += 5 // one station moved
+  const b = history.snapshot(tc, a)
+  expect(history.restore(b)).toEqual(tc)
+  expect(b.pieces.filter((p, i) => p !== a.pieces[i])).toHaveLength(1) // only its piece is new
+  expect(history.sameSnapshot(history.snapshot(tc, b), b)).toBe(true)
+  expect(history.sameSnapshot(a, b)).toBe(false)
+})
+
+it('limits: large models allowed with IndexedDB', () => {
+  const before = { ...M.LIMITS }
+  try {
+    M.allowLargeModels()
+    expect(M.LIMITS.stations).toBeGreaterThanOrEqual(4251) // all of Budapest
+    expect(M.LIMITS.name).toBe(before.name) // text lengths stay
+  } finally { Object.assign(M.LIMITS, before) }
+})
+
+it('file weights: every example is light, a whole city huge', () => {
+  for (const f of readdirSync(EXAMPLES)) expect(M.fileWeight(M.toJSON(M.fromJSON(readFileSync(join(EXAMPLES, f), 'utf8')), 0).length)).toBe('light')
+  expect([M.fileWeight(50_000), M.fileWeight(1_000_000)]).toEqual(['heavy', 'huge'])
+})

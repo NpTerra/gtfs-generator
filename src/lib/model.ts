@@ -269,8 +269,9 @@ export function fromJSON(text: string): TestCase {
 
 // Upper bounds the editor is built for: far beyond any hand-made test, so
 // only big GTFS imports or foreign files get near them. They keep the map
-// fast, a project within the browser's storage and share links shareable.
-export const LIMITS = {
+// fast and a project within the browser's storage. These fit localStorage's
+// 5 MB; with IndexedDB, main.ts raises the counts with allowLargeModels().
+export const LIMITS: Record<'name' | 'description' | 'act' | 'exception' | 'text' | CountLimit | 'stopsPerLine', number> = {
   name: 100, // the test name, also the zip and folder name
   description: 5000,
   act: 5000,
@@ -282,7 +283,12 @@ export const LIMITS = {
   stops: 2000, // all lines of a model together: stops make up most of a test case's size
   calendars: 100,
   trips: 1000,
-} as const
+}
+
+// a whole city's network (Budapest: 4251 stations, 366 lines, 9163 stops) and room to spare
+export function allowLargeModels() {
+  Object.assign(LIMITS, { stations: 10_000, lines: 1000, stopsPerLine: 1000, stops: 25_000, calendars: 1000, trips: 5000 })
+}
 
 // A text field's maxlength: the limit, or none while text an import brought in is longer
 // (a warning says so). With the limit as maxlength, such text could only be deleted from,
@@ -290,6 +296,14 @@ export const LIMITS = {
 export const room = (max: number, value: string | null | undefined) => (value?.length ?? 0) > max ? undefined : max
 
 export type CountLimit = 'stations' | 'lines' | 'calendars' | 'trips' | 'stops'
+
+// How heavy a test case is, by its saved (compact) JSON's length; the Project
+// panel colors file icons by it. A light one is a hand-made test (a share link
+// of it fits any link shortener), a huge one most of a city.
+export const FILE_LIGHT = 10_000
+export const FILE_HEAVY = 100_000
+export type FileWeight = 'light' | 'heavy' | 'huge'
+export const fileWeight = (chars: number): FileWeight => chars <= FILE_LIGHT ? 'light' : chars <= FILE_HEAVY ? 'heavy' : 'huge'
 
 export const stopCount = (model: Model) => model.lines.reduce((n, l) => n + l.stops.length, 0)
 
