@@ -1,13 +1,12 @@
 // State of the "Import from GTFS" dialog (GtfsImportDialog.vue): pick routes
 // from a feed to replace the Arrange or Expected model with, or to start a new
 // test case with (a feed imported into the project).
-import { reactive } from 'vue'
+import { markRaw, reactive, watch } from 'vue'
 import { toast } from 'vue-sonner'
-import type { Feed } from '@/lib/feed'
-import { FEED_FILES, readFeed } from '@/lib/feed'
+import type { WorkerFeed } from '@/lib/feedWorker'
+import { openFeed } from '@/lib/feedWorker'
 import { t } from '@/lib/i18n'
 import * as M from '@/lib/model'
-import * as zip from '@/lib/zip'
 import { replaceModel, tab } from './useEditor'
 import { addFile } from './useProject'
 
@@ -17,28 +16,33 @@ export const gtfsImport = reactive({
   open: false,
   fileName: '',
   target: 'arrange' as Target,
-  feed: null as Feed | null,
+  feed: null as WorkerFeed | null, // read in a worker, which lives until the dialog closes
   selected: new Set<string>(),
   oneTripPerLine: true,
 })
 
 // files: an already-unzipped feed, or a .zip File to read first; false if it couldn't be read
+watch(() => gtfsImport.open, (open) => {
+  if (open) return
+  gtfsImport.feed?.close()
+  gtfsImport.feed = null
+})
+
 export async function openGtfsImport(source: File | Record<string, Uint8Array>, fileName?: string, target: Target = tab.value): Promise<boolean> {
   const reading = toast.loading(t('gtfs.reading'))
   try {
-    await new Promise(r => setTimeout(r, 30)) // let the toast paint before the heavy parsing
-    // ponytail: parses on the main thread (a big city feed blocks the UI for a few seconds); a Web Worker if that bites
-    const files = source instanceof File
-      ? await zip.read(new Uint8Array(await source.arrayBuffer()), name => FEED_FILES.has(name.split('/').pop()!))
-      : source
-    const feed = readFeed(files)
-    if (feed.routes.length === 0) throw new Error(t('gtfs.noRoutes'))
+    const feed = await openFeed(source instanceof File ? await source.arrayBuffer() : source)
+    if (feed.routes.length === 0) {
+      feed.close()
+      throw new Error(t('gtfs.noRoutes'))
+    }
     toast.dismiss(reading)
+    gtfsImport.feed?.close()
     Object.assign(gtfsImport, {
       open: true,
       fileName: fileName ?? (source instanceof File ? source.name : 'feed.zip'),
       target,
-      feed,
+      feed: markRaw(feed), // its route list is only read
       // small feeds (e.g. our own arrange.zip) come in whole; big ones start empty
       selected: new Set(feed.routes.length <= 8 ? feed.routes.map(r => r.key) : []),
       // one trip per line keeps generated stop_times small; feeds with few trips keep them all
@@ -57,8 +61,7 @@ export async function applyGtfsImport() {
   if (!feed || selected.size === 0) return
   const building = toast.loading(t('gtfs.reading'))
   try {
-    await new Promise(r => setTimeout(r, 30)) // let the toast paint: big feeds take a few seconds
-    const model = feed.build([...selected], oneTripPerLine)
+    const model = await feed.build([...selected], oneTripPerLine)
     const over = M.countsOverLimit(model)
     if (over.length) {
       const details = over.map(o => `${o.n} ${t('count.' + o.what)} (max ${o.max})`).join(', ')
@@ -80,6 +83,7 @@ export async function applyGtfsImport() {
       n: model.lines.length, stations: model.stations.length, target: target === 'expected' ? 'Expected' : 'Arrange',
     }), { id: building })
   } catch (err) {
+    if (!gtfsImport.open) return void toast.dismiss(building) // closed while building: nothing to say
     console.error(err)
     toast.error(t('toast.importFailed', { msg: (err as Error).message }), { id: building })
   }
