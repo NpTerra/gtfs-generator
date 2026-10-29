@@ -11,6 +11,11 @@ import { replaceModel, tab } from './useEditor'
 import { addFile } from './useProject'
 
 export type Target = 'arrange' | 'expected' | 'new'
+// Farther apart, a shared name is a different place: Budapest has 15 "Ady Endre utca" stops
+// across 25 km, and merging them sends lines zigzagging over the city
+export const MERGE_MAX = 1000 // meters
+// what the distance field holds, made usable: an empty, zero or negative entry means the default
+export const mergeDistance = (v: unknown) => Math.min(MERGE_MAX, Number(v) > 0 ? Number(v) : 150)
 
 export const gtfsImport = reactive({
   open: false,
@@ -19,6 +24,8 @@ export const gtfsImport = reactive({
   feed: null as WorkerFeed | null, // read in a worker, which lives until the dialog closes
   selected: new Set<string>(),
   oneTripPerLine: true,
+  mergeSameName: false, // off by default: it changes the feed's data
+  mergeWithin: 150, // meters
 })
 
 // files: an already-unzipped feed, or a .zip File to read first; false if it couldn't be read
@@ -57,11 +64,11 @@ export async function openGtfsImport(source: File | Record<string, Uint8Array>, 
 }
 
 export async function applyGtfsImport() {
-  const { feed, selected, target, oneTripPerLine } = gtfsImport
+  const { feed, selected, target, oneTripPerLine, mergeSameName, mergeWithin } = gtfsImport
   if (!feed || selected.size === 0) return
   const building = toast.loading(t('gtfs.reading'))
   try {
-    const model = await feed.build([...selected], oneTripPerLine)
+    const model = await feed.build([...selected], oneTripPerLine, mergeSameName ? mergeDistance(mergeWithin) : 0)
     const over = M.countsOverLimit(model)
     if (over.length) {
       const details = over.map(o => `${o.n} ${t('count.' + o.what)} (max ${o.max})`).join(', ')

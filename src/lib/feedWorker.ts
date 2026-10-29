@@ -5,7 +5,7 @@ import type { Model } from './model'
 
 export interface WorkerFeed {
   routes: FeedRoute[]
-  build(routeKeys: string[], oneTripPerLine: boolean): Promise<Model>
+  build(routeKeys: string[], oneTripPerLine: boolean, mergeWithin: number): Promise<Model>
   close(): void
 }
 
@@ -35,7 +35,7 @@ export async function openFeed(source: ArrayBuffer | Record<string, Uint8Array>)
     const routes = await ask<FeedRoute[]>({ type: 'read', source }, buffers)
     return {
       routes,
-      build: (keys, oneTripPerLine) => ask<Model>({ type: 'build', keys, oneTripPerLine }),
+      build: (keys, oneTripPerLine, mergeWithin) => ask<Model>({ type: 'build', keys, oneTripPerLine, mergeWithin }),
       close: () => { // a build still under way fails ("closed")
         worker.terminate()
         for (const call of pending.values()) call.reject(new Error('closed'))

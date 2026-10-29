@@ -15,7 +15,7 @@ self.onmessage = async ({ data }: MessageEvent) => {
       feed = readFeed(files)
       postMessage({ id: data.id, result: feed.routes })
     } else {
-      postMessage({ id: data.id, result: feed!.build(data.keys, data.oneTripPerLine) })
+      postMessage({ id: data.id, result: feed!.build(data.keys, data.oneTripPerLine, data.mergeWithin) })
     }
   } catch (err) {
     postMessage({ id: data.id, error: String((err as Error)?.message || err || 'the feed reader failed') })

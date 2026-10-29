@@ -3,7 +3,9 @@
 // Real feeds are large (hundreds of routes, thousands of stops, millions of
 // stop_times), so instead of copying everything this picks routes:
 //   - each route becomes one line, built from its longest trip
-//   - platforms are merged into their parent station (act.txt names stations)
+//   - platforms are merged into their parent station (act.txt names stations);
+//     optionally also stops with the same name close together (feeds without
+//     parent stations list every platform of a hub as its own stop)
 //   - only stops used by the picked lines become stations, in GPS mode so
 //     their coordinates stay exact
 //   - trips: one per line, or every trip of the route with the same stop count
@@ -32,10 +34,12 @@ export interface FeedRoute {
 
 export interface Feed {
   routes: FeedRoute[]
-  build(routeKeys: string[], oneTripPerLine: boolean): Model
+  build(routeKeys: string[], oneTripPerLine: boolean, mergeWithin?: number): Model // mergeWithin: meters, 0 = off
 }
 
 interface TripInfo { route: string; service: string; count: number; minSeq: number; maxSeq: number; first: string; last: string }
+
+const SPAN = 1000 // meters: how far a merged group of same-named stops reaches from its first
 
 const routeColor = (raw: string | undefined, i: number) =>
   /^#?[0-9a-fA-F]{6}$/.test(raw ?? '') ? '#' + raw!.replace(/^#/, '').toUpperCase() : LINE_COLORS[i % LINE_COLORS.length]
@@ -102,7 +106,7 @@ export function readFeed(files: Record<string, Uint8Array>): Feed {
     }))
     .sort((a, b) => a.type - b.type || (a.shortName || a.longName).localeCompare(b.shortName || b.longName, undefined, { numeric: true }))
 
-  function build(routeKeys: string[], oneTripPerLine: boolean): Model {
+  function build(routeKeys: string[], oneTripPerLine: boolean, mergeWithin = 0): Model {
     const picked = routes.filter(r => routeKeys.includes(r.key))
     const tripsOf = new Map(picked.map(r => [r.key, oneTripPerLine ? [repTrip.get(r.key)!] : samePattern(r.key)]))
     const repIds = new Set(picked.map(r => repTrip.get(r.key)!))
@@ -117,9 +121,41 @@ export function readFeed(files: Record<string, Uint8Array>): Feed {
     })
 
     // platforms (stops with a known parent_station) count as their station
-    const stationOf = (stopId: string) => {
+    const parentOf = (stopId: string) => {
       const parent = stops.get(stopId)?.parent_station
       return parent && stops.has(parent) ? parent : stopId
+    }
+    // and, if asked, same-named stops in a chain of steps within mergeWithin meters
+    // count as the first of them (a hub's platforms can stretch past the distance),
+    // but none farther than SPAN from it: the station is drawn there, and a long chain
+    // could reach a different place sharing the name
+    const sameAs = new Map<string, string>()
+    if (mergeWithin > 0) {
+      const byName = new Map<string, string[]>()
+      for (const list of rows.values())
+        for (const { stop } of list) {
+          const id = parentOf(stop), name = stops.get(id)?.stop_name ?? ''
+          const same = byName.get(name) ?? []
+          if (!same.includes(id)) same.push(id)
+          byName.set(name, same)
+        }
+      const at = (id: string) => ({ lat: parseFloat(stops.get(id)!.stop_lat) || 0, lon: parseFloat(stops.get(id)!.stop_lon) || 0 })
+      const meters = (a: { lat: number; lon: number }, b: { lat: number; lon: number }) => // close enough at these distances
+        Math.hypot((b.lon - a.lon) * Math.cos(a.lat * Math.PI / 180) * 111_320, (b.lat - a.lat) * 110_540)
+      for (const ids of byName.values()) {
+        const left = ids.sort()
+        while (left.length) {
+          const first = left.shift()!, group = [first]
+          for (const g of group) // grows while it is walked
+            for (let i = left.length - 1; i >= 0; i--)
+              if (meters(at(g), at(left[i])) <= mergeWithin && meters(at(first), at(left[i])) <= SPAN) group.push(...left.splice(i, 1))
+          for (const id of group.slice(1)) sameAs.set(id, first)
+        }
+      }
+    }
+    const stationOf = (stopId: string) => {
+      const id = parentOf(stopId)
+      return sameAs.get(id) ?? id
     }
 
     const model = emptyModel()
@@ -157,8 +193,10 @@ export function readFeed(files: Record<string, Uint8Array>): Feed {
       }
       for (const r of stopRows) {
         const id = stationId(stationOf(r.stop))
-        // two platforms of the same station in a row are one stop of the line
-        if (line.stops.at(-1)?.stationId === id) continue
+        // two platforms of the same station in a row are one stop of the line: it arrives
+        // at the first and leaves from the last
+        const last = line.stops.at(-1)
+        if (last?.stationId === id) { last.departure = r.departure; continue }
         line.stops.push({ stationId: id, arrival: r.arrival, departure: r.departure })
       }
       model.lines.push(line)

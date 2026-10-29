@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { applyGtfsImport, gtfsImport } from '@/composables/useGtfsImport'
+import { applyGtfsImport, gtfsImport, MERGE_MAX, mergeDistance } from '@/composables/useGtfsImport'
 import { LIMITS } from '@/lib/model'
 import { inkFor } from '@/lib/utils'
 
@@ -87,11 +87,27 @@ const selectVisible = (on: boolean) => visible.value.forEach(r => toggle(r.key, 
         </div>
       </div>
 
+      <div class="flex items-start gap-2">
+        <Checkbox id="merge-same-name" v-model="gtfsImport.mergeSameName" class="mt-0.5" />
+        <div class="grid gap-0.5">
+          <Label for="merge-same-name" class="flex flex-wrap items-center gap-1.5">
+            Merge stops with the same name within
+            <Input
+              v-model.number="gtfsImport.mergeWithin" type="number" min="1" :max="MERGE_MAX" step="10" :disabled="!gtfsImport.mergeSameName"
+              class="h-7 w-20 px-2 text-[13px] md:text-[13px]" aria-label="Merge distance in meters" @change="gtfsImport.mergeWithin = mergeDistance(gtfsImport.mergeWithin)"
+            /> m
+          </Label>
+          <p class="text-xs text-muted-foreground">
+            Some feeds list every platform of a hub as its own stop, without a parent station, so one name becomes many stations. At most {{ MERGE_MAX }} m: farther apart, a shared name is usually another place (a street name used in several districts). Off by default: it changes the feed's data, which a test may depend on.
+          </p>
+        </div>
+      </div>
+
       <DialogFooter class="items-center gap-2 sm:justify-between">
         <span v-if="tooBig" class="font-semibold text-destructive" role="status">
           Too big: {{ gtfsImport.selected.size }} routes, {{ pickedStops }} stops. The editor handles at most {{ LIMITS.lines }} lines and {{ LIMITS.stops }} stops.
         </span>
-        <span v-else class="text-muted-foreground">{{ gtfsImport.selected.size }} of {{ routes.length }} routes picked, {{ pickedStops }} stops</span>
+        <span v-else class="text-muted-foreground">{{ gtfsImport.selected.size }} of {{ routes.length }} routes picked, {{ pickedStops }} stops along the lines</span>
         <div class="flex gap-2">
           <Button variant="outline" @click="gtfsImport.open = false">Cancel</Button>
           <Button :disabled="gtfsImport.selected.size === 0 || tooBig" @click="applyGtfsImport">

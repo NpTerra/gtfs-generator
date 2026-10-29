@@ -126,3 +126,75 @@ describe('createRowReader', () => {
     expect(rows).toEqual([['1', 'plain'], ['2', 'comma, inside'], ['3', 'multi\nline "quoted"'], ['4', 'last']])
   })
 })
+
+describe('merging same-named stops (optional)', () => {
+  // two "Bridge" stops ~50 m apart and a third ~2 km away, none with a parent station
+  const hub = readFeed(feedFiles({
+    'stops.txt': `stop_id,stop_name,stop_lat,stop_lon
+Ba,Bridge,47.5,19.05
+Bb,Bridge,47.5004,19.05
+Bfar,Bridge,47.518,19.05
+M,Mill,47.51,19.07`,
+    'routes.txt': `route_id,route_short_name,route_long_name,route_type
+R1,1,One,3`,
+    'trips.txt': `route_id,service_id,trip_id
+R1,WK,T1`,
+    'stop_times.txt': `trip_id,arrival_time,departure_time,stop_id,stop_sequence
+T1,08:00:00,08:00:00,Ba,1
+T1,08:05:00,08:05:00,M,2
+T1,08:10:00,08:10:00,Bb,3
+T1,08:20:00,08:20:00,Bfar,4`,
+    'calendar.txt': `service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date
+WK,1,1,1,1,1,0,0,20250101,20251231`,
+  }))
+  const names = (m: ReturnType<typeof hub.build>) => m.lines[0].stops.map(s => m.stations.find(st => st.id === s.stationId)!.name + '#' + s.stationId)
+
+  it('keeps every stop by default', () => {
+    expect(hub.build(['R1'], true).stations).toHaveLength(4)
+  })
+
+  it('merges same-named stops within the distance into the first one', () => {
+    const m = hub.build(['R1'], true, 150)
+    expect(m.stations.map(s => s.name).sort()).toEqual(['Bridge', 'Bridge', 'Mill']) // the far one stays apart
+    const [first, , third, fourth] = names(m)
+    expect(third).toBe(first) // Bb became Ba
+    expect(fourth).not.toBe(first)
+  })
+
+  it('follows a chain of close stops past the distance', () => {
+    // three "Row" stops 100 m apart: the last is 200 m from the first, but 100 m from the middle one
+    const row = readFeed(feedFiles({
+      'stops.txt': `stop_id,stop_name,stop_lat,stop_lon
+Ra,Row,47.5,19.05
+Rb,Row,47.5009,19.05
+Rc,Row,47.5018,19.05`,
+      'routes.txt': `route_id,route_short_name,route_long_name,route_type
+R1,1,One,3`,
+      'trips.txt': `route_id,service_id,trip_id
+R1,WK,T1`,
+      'stop_times.txt': `trip_id,arrival_time,departure_time,stop_id,stop_sequence
+T1,08:00:00,08:00:00,Rc,1
+T1,08:05:00,08:05:00,Ra,2
+T1,08:10:00,08:10:00,Rb,3`,
+    }))
+    const merged = row.build(['R1'], true, 150)
+    expect(merged.stations).toHaveLength(1)
+    // the three stops in a row become one: arriving at the first, leaving from the last
+    expect(merged.lines[0].stops).toEqual([{ stationId: merged.stations[0].id, arrival: '08:00:00', departure: '08:10:00' }])
+    expect(row.build(['R1'], true, 50).stations).toHaveLength(3)
+  })
+
+  it('a chain never reaches past 1000 m from its first stop', () => {
+    // five "Long" stops ~896 m apart: each within 1000 m of the next, the ends 3.6 km apart
+    const ids = ['La', 'Lb', 'Lc', 'Ld', 'Le']
+    const chain = readFeed(feedFiles({
+      'stops.txt': 'stop_id,stop_name,stop_lat,stop_lon\n' + ids.map((id, i) => `${id},Long,${47.5 + i * 0.0081},19.05`).join('\n'),
+      'routes.txt': `route_id,route_short_name,route_long_name,route_type
+R1,1,One,3`,
+      'trips.txt': `route_id,service_id,trip_id
+R1,WK,T1`,
+      'stop_times.txt': 'trip_id,arrival_time,departure_time,stop_id,stop_sequence\n' + ids.map((id, i) => `T1,08:0${i}:00,08:0${i}:00,${id},${i + 1}`).join('\n'),
+    }))
+    expect(chain.build(['R1'], true, 1000).stations).toHaveLength(3) // La+Lb, Lc+Ld, Le
+  })
+})
