@@ -7,12 +7,13 @@ import {
 import { computed } from 'vue'
 import ThemeMenu from '@/components/ThemeMenu.vue'
 import { Button } from '@/components/ui/button'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import LanguageMenu from '@/components/LanguageMenu.vue'
-import { activeProject, errorCount, problems } from '@/composables/useEditor'
+import { activeProject, errorCount, output, problems, type Output } from '@/composables/useEditor'
 import { generate } from '@/composables/useFileActions'
 import { showPanel } from '@/composables/usePanels'
 import {
@@ -63,9 +64,19 @@ function badgeStyle(name: string) {
     </div>
 
 <div class="flex items-center gap-1.5">
+      <!-- what Generate writes; the panels show only what that format has a place for -->
+      <ToggleGroup
+        type="single" variant="outline" size="sm" :model-value="output" aria-label="Map format"
+        @update:model-value="v => v && (output = v as Output)"
+      >
+        <ToggleGroupItem value="gtfs" class="px-2 text-xs font-bold" title="GTFS feeds: arrange.zip, assert.zip (stop times, trips, calendars, agency)">GTFS</ToggleGroupItem>
+        <ToggleGroupItem value="tmx" class="px-2 text-xs font-bold" title="Maps for the course's Transport Map Editor: arrange.tmx, assert.tmx (stops, lines and their order only)">TMX</ToggleGroupItem>
+        <ToggleGroupItem value="plain" class="px-2 text-xs font-bold" title="What's inside the .tmx maps, unencrypted, to look at: arrange-tmx/ and assert-tmx/ folders (CSVs, manifest, history). The course takes .tmx, not these">Plain</ToggleGroupItem>
+      </ToggleGroup>
       <Button
-        size="sm" title="Download the submission files (act.txt, comment.txt, arrange.zip, assert.*)"
-        @click="generate"
+        size="sm"
+        :title="`Download the submission files (act.txt, comment.txt, ${{ gtfs: 'arrange.zip, assert.zip', tmx: 'arrange.tmx, assert.tmx', plain: 'arrange-tmx/, assert-tmx/' }[output]} or assert.txt)`"
+        @click="generate()"
       >
         <DownloadIcon /> Generate
       </Button>

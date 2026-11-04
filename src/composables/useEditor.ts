@@ -1,7 +1,7 @@
 // The editor's shared state and actions. Module-level refs make this a
 // singleton "store": every component that imports it sees the same state.
 // (Pinia is the official store library, worth adopting once this grows.)
-import { useDebounceFn, useEventListener } from '@vueuse/core'
+import { useDebounceFn, useEventListener, useLocalStorage } from '@vueuse/core'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import { restore, sameSnapshot, type Snapshot, snapshot } from '@/lib/history'
@@ -27,8 +27,15 @@ export const loadCount = ref(0) // bumped on every load, so the map can re-fit
 export const editableModel = computed<Model>(() =>
   tab.value === 'expected' ? tc.value.expected.model : tc.value.arrange)
 export const canEdit = computed(() => !(tab.value === 'expected' && tc.value.expected.type === 'exception'))
+// what Generate writes (a top bar switch): GTFS feeds, .tmx maps, or plain ones (the .tmx's zip
+// unencrypted, to look inside); the panels hide what the format has no place for, and
+// validation checks what it needs (plain is TMX there)
+export type Output = 'gtfs' | 'tmx' | 'plain'
+export const output = useLocalStorage<Output>('gtfs-editor-format', 'gtfs')
+export const format = computed<M.Format>(() => output.value === 'gtfs' ? 'gtfs' : 'tmx')
+
 export const problems = computed(() => {
-  const list = M.validate(tc.value)
+  const list = M.validate(tc.value, format.value)
   if (otherNames.value.some(n => n.toLowerCase() === tc.value.name.toLowerCase()))
     list.unshift({ level: 'warning', text: t('v.dupFileName', { name: tc.value.name }) })
   return list

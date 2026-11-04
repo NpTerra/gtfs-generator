@@ -322,10 +322,10 @@ export function isPhoneMissing(agency: Agency | undefined): boolean {
   return !agency?.phone?.trim() || /123-456-7890/.test(agency.phone)
 }
 
-function validateModel(model: Model, label: string, problems: Problem[]) {
+function validateModel(model: Model, label: string, problems: Problem[], format: Format) {
   for (const { what, n, max } of countsOverLimit(model))
     problems.push({ level: 'warning', text: t('v.tooMany', { label, what: t('count.' + what), n, max }) })
-  const longNames = [...model.stations.map(s => s.name), ...model.lines.flatMap(l => [l.name, l.shortName])]
+  const longNames = [...model.stations.map(s => s.name), ...model.lines.flatMap(l => format === 'gtfs' ? [l.name, l.shortName] : [tmxLineName(l)])]
     .filter(name => String(name).length > LIMITS.text).length
   if (longNames) problems.push({ level: 'warning', text: t('v.longNames', { label, n: longNames, max: LIMITS.text }) })
 
@@ -334,7 +334,10 @@ function validateModel(model: Model, label: string, problems: Problem[]) {
   for (const s of model.stations) {
     if (stationIds.has(s.id)) problems.push({ level: 'error', text: t('v.dupStation', { label, id: s.id }) })
     stationIds.add(s.id)
-    if (!s.name) problems.push({ level: 'warning', text: t('v.stationNoName', { label, id: s.id }) })
+    // the Transport Map Editor refuses a stop without a name
+    if (!s.name.trim()) problems.push({ level: format === 'tmx' ? 'error' : 'warning', text: t('v.stationNoName', { label, id: s.id }) })
+    // and one off the globe (its file would open as an empty map)
+    if (format === 'tmx' && !(Math.abs(s.lat) <= 90 && Math.abs(s.lon) <= 180)) problems.push({ level: 'error', text: t('v.stationOffGlobe', { label, id: s.id }) })
     else nameCounts.set(s.name, (nameCounts.get(s.name) ?? 0) + 1)
   }
   // only a warning: AMBIGUOUS_STATION_NAMES tests need duplicates on purpose
@@ -346,9 +349,12 @@ function validateModel(model: Model, label: string, problems: Problem[]) {
     if (lineIds.has(l.id)) problems.push({ level: 'error', text: t('v.dupLine', { label, id: l.id }) })
     lineIds.add(l.id)
     if (l.stops.length < 2) problems.push({ level: 'warning', text: t('v.fewStops', { label, name: l.name }) })
+    if (format === 'tmx' && !tmxLineName(l).trim()) problems.push({ level: 'error', text: t('v.lineNoName', { label, id: l.id }) })
+    if (format === 'tmx' && !/^#[0-9a-fA-F]{6}$/.test(l.color)) problems.push({ level: 'error', text: t('v.lineColor', { label, id: l.id }) })
     l.stops.forEach((st, i) => {
       if (!stationIds.has(st.stationId))
         problems.push({ level: 'error', text: t('v.stopMissingStation', { label, name: l.name, n: i + 1, id: st.stationId }) })
+      if (format === 'tmx') return // no times in a .tmx
       if (normalizeTime(st.arrival) === null)
         problems.push({ level: 'error', text: t('v.badArrival', { label, name: l.name, n: i + 1, time: st.arrival }) })
       if (normalizeTime(st.departure) === null)
@@ -357,6 +363,7 @@ function validateModel(model: Model, label: string, problems: Problem[]) {
   }
 
   const calendarIds = new Set<number>()
+  if (format === 'tmx') return calendarIds // no calendars or trips in a .tmx
   for (const c of model.calendars) {
     if (calendarIds.has(c.id)) problems.push({ level: 'error', text: t('v.dupCalendar', { label, id: c.id }) })
     calendarIds.add(c.id)
@@ -399,13 +406,19 @@ export function uniqueName(name: string, taken: string[]): string {
   return `${base}_${n}`
 }
 
-export function validate(tc: TestCase): Problem[] {
+// What Generate writes: GTFS feeds, or .tmx maps for the course's Transport Map Editor (lib/tmx.ts),
+// which only know stops, lines and their stop order: no times, trips, calendars or agency
+export type Format = 'gtfs' | 'tmx'
+// a .tmx line has one name: the short one, else the long one
+export const tmxLineName = (l: Line) => l.shortName || l.name
+
+export function validate(tc: TestCase, format: Format = 'gtfs'): Problem[] {
   const problems: Problem[] = []
 
   if (isBadName(tc.name)) problems.push({ level: 'error', text: t('v.badName') })
   const lengths: [string, string, number][] = [
     ['Name', tc.name, LIMITS.name], ['comment.txt', tc.description, LIMITS.description], ['act.txt', tc.act, LIMITS.act],
-    ...Object.entries(tc.agency).map(([k, v]): [string, string, number] => ['Agency ' + k, v, LIMITS.text]),
+    ...format === 'gtfs' ? Object.entries(tc.agency).map(([k, v]): [string, string, number] => ['Agency ' + k, v, LIMITS.text]) : [],
   ]
   if (tc.expected.type === 'exception') lengths.push(['assert.txt', tc.expected.exception, LIMITS.exception])
   // the editor's own limits, not the homework's: hints, except the name, which names the zip and folder
@@ -414,20 +427,20 @@ export function validate(tc: TestCase): Problem[] {
   if (!tc.description?.trim()) problems.push({ level: 'warning', text: t('v.noDescription') })
   if (!tc.act?.trim()) problems.push({ level: 'error', text: t('v.noAct') })
   for (const p of checkAct(tc.act, tc.arrange)) problems.push({ level: 'warning', text: t(p.key, p.params) })
-  if (isPhoneMissing(tc.agency)) problems.push({ level: 'warning', text: t('v.phone') })
+  if (format === 'gtfs' && isPhoneMissing(tc.agency)) problems.push({ level: 'warning', text: t('v.phone') })
 
-  const arrangeCalendars = validateModel(tc.arrange, 'Arrange', problems)
-  for (const trip of tc.arrange.trips)
+  const arrangeCalendars = validateModel(tc.arrange, 'Arrange', problems, format)
+  if (format === 'gtfs') for (const trip of tc.arrange.trips)
     if (!arrangeCalendars.has(trip.service))
       problems.push({ level: 'error', text: t('v.tripMissingCalendar', { label: 'Arrange', id: trip.id, service: trip.service }) })
 
   if (tc.expected.type === 'exception') {
     if (!tc.expected.exception?.trim()) problems.push({ level: 'error', text: t('v.noException') })
   } else {
-    const expectedCalendars = validateModel(tc.expected.model, 'Expected', problems)
+    const expectedCalendars = validateModel(tc.expected.model, 'Expected', problems, format)
     // the expected model may borrow the arrange calendars when it has none
     const effective = tc.expected.model.calendars.length > 0 ? expectedCalendars : arrangeCalendars
-    for (const trip of tc.expected.model.trips)
+    if (format === 'gtfs') for (const trip of tc.expected.model.trips)
       if (!effective.has(trip.service))
         problems.push({ level: 'error', text: t('v.tripMissingCalendar', { label: 'Expected', id: trip.id, service: trip.service }) })
   }

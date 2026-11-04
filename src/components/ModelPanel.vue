@@ -12,7 +12,7 @@ import StationCard from '@/components/StationCard.vue'
 import IdInput from '@/components/IdInput.vue'
 import { Button } from '@/components/ui/button'
 import {
-  addCalendar, addLine, addStation, addTrip, calendarsFor, canEdit, clearSelection, deleteStations, editableModel, pickLineId, remove, selection, tab, tc,
+  addCalendar, addLine, addStation, addTrip, calendarsFor, canEdit, clearSelection, deleteStations, editableModel, format, pickLineId, remove, selection, tab, tc,
 } from '@/composables/useEditor'
 import { openGtfsImport } from '@/composables/useGtfsImport'
 import { freeSpot } from '@/composables/useViewport'
@@ -87,7 +87,8 @@ const pin = (id: number | undefined) => id === undefined ? [] : [id]
         <Button variant="outline" size="sm" class="self-start" @click="added = { lines: addLine(model) }"><PlusIcon /> Add line</Button>
       </PanelSection>
 
-      <PanelSection id="calendars" title="Calendars" :count="model.calendars.length">
+      <!-- GTFS only: a .tmx has no calendars or trips -->
+      <PanelSection v-if="format === 'gtfs'" id="calendars" title="Calendars" :count="model.calendars.length">
         <p v-if="isExpected && model.calendars.length === 0" class="text-[13px] text-muted-foreground">{{ t('hint.calendarsInherit') }}</p>
         <PagedList v-slot="{ item }" :items="model.calendars" :text="c => `C${c.id} ${c.start} ${c.end}`" :pinned="pin(added.calendars)" noun="calendars">
           <CalendarCard :calendar="item" :model="model" />
@@ -95,7 +96,7 @@ const pin = (id: number | undefined) => id === undefined ? [] : [id]
         <Button variant="outline" size="sm" class="self-start" @click="added = { calendars: addCalendar(model) }"><PlusIcon /> Add calendar</Button>
       </PanelSection>
 
-      <PanelSection id="trips" title="Trips" :count="model.trips.length">
+      <PanelSection v-if="format === 'gtfs'" id="trips" title="Trips" :count="model.trips.length">
         <p class="text-[13px] text-muted-foreground">{{ t('hint.trips') }}</p>
         <!-- id | line | calendar | delete; the two selects wrap under each other when narrow -->
         <PagedList v-slot="{ item: trip }" :items="model.trips" :text="tr => `T${tr.id} R${tr.line} C${tr.service} ${model.lines.find(l => l.id === tr.line)?.name ?? ''}`" :pinned="pin(added.trips)" noun="trips">

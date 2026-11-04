@@ -13,8 +13,8 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut,
   DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { activeId } from '@/composables/useEditor'
-import { exportAll, exportJson, generateAll, importFiles, pickAndImport } from '@/composables/useFileActions'
+import { activeId, type Output, tc } from '@/composables/useEditor'
+import { exportAll, exportJson, generate, generateAll, importFiles, pickAndImport } from '@/composables/useFileActions'
 import {
   copyToProject, currentProject, deleteFile, duplicateFile, fileTestCase, files, newFile, openFile, projects, renameFile, restore, trash,
 } from '@/composables/useProject'
@@ -42,6 +42,12 @@ const timeOf = (at: number) => new Date(at).toLocaleTimeString([], { hour: '2-di
 function exportFile(id: string) {
   const file = fileTestCase(id)
   if (file) exportJson(file)
+}
+
+// the open file as it is on screen (its last edit may not be saved yet), others as stored
+function generateFile(id: string, out: Output) {
+  const file = id === activeId.value ? tc.value : fileTestCase(id)
+  if (file) generate(file, out)
 }
 
 // enter/leave also fire for every child crossed, so count them
@@ -136,6 +142,14 @@ function onDrop(ev: DragEvent) {
               <DropdownMenuSubTrigger :disabled="f.unreadable"><FolderInputIcon /> Copy to project</DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
                 <DropdownMenuItem v-for="p in otherProjects" :key="p.id" @select="copyToProject(f.id, p)">{{ p.name }}</DropdownMenuItem>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger :disabled="f.unreadable"><DownloadIcon /> Generate</DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuItem @select="generateFile(f.id, 'gtfs')">GTFS</DropdownMenuItem>
+                <DropdownMenuItem @select="generateFile(f.id, 'tmx')">TMX</DropdownMenuItem>
+                <DropdownMenuItem @select="generateFile(f.id, 'plain')">Plain (unencrypted TMX)</DropdownMenuItem>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
             <DropdownMenuItem :disabled="f.unreadable" @select="exportFile(f.id)"><SaveIcon /> Export JSON</DropdownMenuItem>

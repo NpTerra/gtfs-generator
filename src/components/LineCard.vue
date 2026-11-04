@@ -5,7 +5,7 @@ import IdInput from '@/components/IdInput.vue'
 import RefSelect from '@/components/RefSelect.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { changeLineId, deleteLine, hasRoomForStop, pickLineId } from '@/composables/useEditor'
+import { changeLineId, deleteLine, format, hasRoomForStop, pickLineId } from '@/composables/useEditor'
 import { t } from '@/lib/i18n'
 import type { Line, Model } from '@/lib/model'
 import { appendStop, LIMITS, room } from '@/lib/model'
@@ -60,15 +60,21 @@ function addStop() {
           @input="e => line.color = (e.target as HTMLInputElement).value.toUpperCase()"
         >
       </label>
-      <Input v-model="line.shortName" :maxlength="room(LIMITS.text, line.shortName)" class="w-16 shrink-0" placeholder="Short" aria-label="Short name" title="Short name (route_short_name)" />
-      <Input v-model="line.name" :maxlength="room(LIMITS.text, line.name)" class="min-w-0 flex-1" placeholder="Long name" aria-label="Long name" title="Long name (route_long_name)" />
+      <!-- GTFS has a short and a long name; a .tmx line has one, the short one (else the long one,
+           shown as its placeholder then) -->
+      <Input v-if="format === 'gtfs'" v-model="line.shortName" :maxlength="room(LIMITS.text, line.shortName)" class="w-16 shrink-0" placeholder="Short" aria-label="Short name" title="Short name (route_short_name)" />
+      <Input v-if="format === 'gtfs'" v-model="line.name" :maxlength="room(LIMITS.text, line.name)" class="min-w-0 flex-1" placeholder="Long name" aria-label="Long name" title="Long name (route_long_name)" />
+      <Input
+        v-else v-model="line.shortName" :maxlength="room(LIMITS.text, line.shortName)" class="min-w-0 flex-1"
+        :placeholder="line.name || 'Name'" aria-label="Name" title="Line name (the short name; when it's empty, the long one in grey goes in the .tmx)"
+      />
       <Button variant="ghost" size="icon-sm" class="text-muted-foreground hover:text-destructive" title="Delete line" aria-label="Delete line" @click="deleteLine(model, line)">
         <XIcon />
       </Button>
     </div>
     <div class="flex items-center gap-1.5">
       <IdInput :id="line.id" prefix="R" label="Line ID" :on-change-id="id => changeLineId(model, line, id)" />
-      <RefSelect v-model="line.type" :options="routeTypes" :label="r => r.label" prefix="type " class="min-w-0 flex-1" title="Route type" aria-label="Route type" />
+      <RefSelect v-if="format === 'gtfs'" v-model="line.type" :options="routeTypes" :label="r => r.label" prefix="type " class="min-w-0 flex-1" title="Route type" aria-label="Route type" />
     </div>
 
     <p v-if="line.stops.length === 0" class="text-[13px] text-muted-foreground">{{ t('hint.noStops') }}</p>
@@ -80,19 +86,25 @@ function addStop() {
       <ChevronRightIcon class="size-3.5 transition-transform" :class="stopsOpen && 'rotate-90'" />
       {{ line.stops.length }} {{ line.stops.length === 1 ? 'stop' : 'stops' }}
     </button>
-    <!-- stop rows: station | arrival | departure | actions; narrow cards give the station its own row -->
-    <div v-if="line.stops.length && stopsOpen" class="grid grid-cols-[minmax(0,1fr)_4.875rem_4.875rem_auto] items-center gap-1 @max-[22rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+    <!-- stop rows: station | arrival | departure | actions; narrow cards give the station its own row.
+         A .tmx has no times: station | actions -->
+    <div
+      v-if="line.stops.length && stopsOpen" class="grid items-center gap-1"
+      :class="format === 'gtfs' ? 'grid-cols-[minmax(0,1fr)_4.875rem_4.875rem_auto] @max-[22rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]' : 'grid-cols-[minmax(0,1fr)_auto]'"
+    >
       <span class="text-xs font-semibold text-muted-foreground @max-[22rem]:hidden">Stops in order</span>
-      <span class="text-xs font-semibold text-muted-foreground @max-[22rem]:hidden">Arrival</span>
-      <span class="text-xs font-semibold text-muted-foreground @max-[22rem]:hidden">Departure</span>
+      <template v-if="format === 'gtfs'">
+        <span class="text-xs font-semibold text-muted-foreground @max-[22rem]:hidden">Arrival</span>
+        <span class="text-xs font-semibold text-muted-foreground @max-[22rem]:hidden">Departure</span>
+      </template>
       <span class="@max-[22rem]:hidden" />
       <template v-for="(stop, i) in line.stops" :key="i">
         <RefSelect
           v-model="stop.stationId" :options="model.stations" :label="s => `${s.name} (S${s.id})`" prefix="S" size="sm"
-          class="@max-[22rem]:col-span-3 @max-[22rem]:mt-1" :aria-label="`Stop ${i + 1} station`"
+          :class="format === 'gtfs' ? '@max-[22rem]:col-span-3 @max-[22rem]:mt-1' : undefined" :aria-label="`Stop ${i + 1} station`"
         />
-        <Input v-model="stop.arrival" class="h-7 px-1 font-mono text-[13px] md:text-[13px]" placeholder="Arrival" :aria-label="`Stop ${i + 1} arrival`" title="Arrival time (HH:MM:SS, empty = 00:00:00)" />
-        <Input v-model="stop.departure" class="h-7 px-1 font-mono text-[13px] md:text-[13px]" placeholder="Departure" :aria-label="`Stop ${i + 1} departure`" title="Departure time (HH:MM:SS, empty = 00:00:00)" />
+        <Input v-if="format === 'gtfs'" v-model="stop.arrival" class="h-7 px-1 font-mono text-[13px] md:text-[13px]" placeholder="Arrival" :aria-label="`Stop ${i + 1} arrival`" title="Arrival time (HH:MM:SS, empty = 00:00:00)" />
+        <Input v-if="format === 'gtfs'" v-model="stop.departure" class="h-7 px-1 font-mono text-[13px] md:text-[13px]" placeholder="Departure" :aria-label="`Stop ${i + 1} departure`" title="Departure time (HH:MM:SS, empty = 00:00:00)" />
         <div class="flex">
           <Button variant="ghost" size="icon-xs" title="Move up" aria-label="Move up" :disabled="i === 0" @click="move(i, -1)"><ArrowUpIcon /></Button>
           <Button variant="ghost" size="icon-xs" title="Move down" aria-label="Move down" :disabled="i === line.stops.length - 1" @click="move(i, 1)"><ArrowDownIcon /></Button>

@@ -6,8 +6,9 @@ import { t } from '@/lib/i18n'
 import * as gtfs from '@/lib/gtfs'
 import * as M from '@/lib/model'
 import { allSubmissions, readZip } from '@/lib/submission'
+import { buildTmxTestFiles } from '@/lib/tmx'
 import * as zip from '@/lib/zip'
-import { problems, tc } from './useEditor'
+import { format, output, type Output, problems, tc } from './useEditor'
 import { openGtfsImport } from './useGtfsImport'
 import { showPanel } from './usePanels'
 import { addFile, allTestCases, currentProject } from './useProject'
@@ -83,26 +84,34 @@ export async function importFiles(list: Iterable<File>) {
   if (failed.length) toast.error(t('toast.importSkipped', { files: failed.join(', ') }))
 }
 
-export function generate() {
-  const current = tc.value
-  // hard gate: the assigned phone number must be filled in
-  if (M.isPhoneMissing(current.agency)) {
+// The submission zip, its maps as GTFS feeds (arrange.zip, assert.zip) or, with the top bar's
+// switch on TMX, as .tmx files for the course's Transport Map Editor (arrange.tmx, assert.tmx)
+// The open test case by default, in the switch's format; the Project panel's file menu passes
+// a file and a format (checked in that format, whichever the switch shows)
+export async function generate(current: M.TestCase = tc.value, out: Output = output.value) {
+  const fmt: M.Format = out === 'gtfs' ? 'gtfs' : 'tmx'
+  const onScreen = current === tc.value && fmt === format.value // its problems are the ones shown
+  // hard gate: the assigned phone number must be filled in (it's the GTFS agency's; a .tmx has none)
+  if (fmt === 'gtfs' && M.isPhoneMissing(current.agency)) {
     toast.error(t('popup.phone'))
-    showPanel('test')
-    openSections.add('agency')
-    nextTick(() => document.querySelector<HTMLInputElement>('[data-field="agency-phone"]')?.focus())
+    if (current === tc.value) {
+      showPanel('test')
+      openSections.add('agency')
+      nextTick(() => document.querySelector<HTMLInputElement>('[data-field="agency-phone"]')?.focus())
+    }
     return
   }
 
-  const errors = problems.value.filter(p => p.level === 'error')
+  const errors = (onScreen ? problems.value : M.validate(current, fmt)).filter(p => p.level === 'error')
   if (errors.length > 0) {
-    showPanel('problems')
+    if (onScreen) showPanel('problems')
     toast.error(t('toast.fixErrors', { n: errors.length }))
     return
   }
 
   try {
-    download(current.name + '.zip', zip.create(gtfs.buildTestFiles(current)) as BlobPart, 'application/zip')
+    const files = fmt === 'tmx' ? await buildTmxTestFiles(current, out === 'plain') : gtfs.buildTestFiles(current)
+    download(current.name + '.zip', zip.create(files) as BlobPart, 'application/zip')
     toast.success(t('toast.generated', { name: current.name }))
   } catch (err) {
     console.error(err)
@@ -111,14 +120,17 @@ export function generate() {
 }
 
 // one zip with a submission folder per test case; all of them must be ready
-export function generateAll() {
+export async function generateAll() {
   const cases = allTestCases()
   const names = cases.map(f => f.name.toLowerCase())
-  const blocked = cases.filter((f, i) => M.isPhoneMissing(f.agency) || names.indexOf(names[i]) !== i
-    || M.validate(f).some(p => p.level === 'error')).map(f => f.name)
+  const blocked = cases.filter((f, i) => (format.value === 'gtfs' && M.isPhoneMissing(f.agency)) || names.indexOf(names[i]) !== i
+    || M.validate(f, format.value).some(p => p.level === 'error')).map(f => f.name)
   if (blocked.length) return void toast.error(t('toast.generateAllBlocked', { names: blocked.join(', ') }), { duration: 10000 })
   try {
-    download(projectFileName('submissions'), zip.create(allSubmissions(cases)) as BlobPart, 'application/zip')
+    const files = format.value === 'tmx'
+      ? (await Promise.all(cases.map(async tc => (await buildTmxTestFiles(tc, output.value === 'plain')).map(f => ({ ...f, name: `${tc.name}/${f.name}` }))))).flat()
+      : allSubmissions(cases)
+    download(projectFileName('submissions'), zip.create(files) as BlobPart, 'application/zip')
     toast.success(t('toast.generatedAll', { n: cases.length }))
   } catch (err) {
     console.error(err)

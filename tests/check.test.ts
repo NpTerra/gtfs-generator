@@ -113,6 +113,27 @@ it('limits: oversized test cases get warnings (only an overlong name is an error
   expect(M.fromJSON(M.toJSON(tc, 0))).toEqual(M.fromJSON(M.toJSON(tc)))
 })
 
+it('validation follows the format: TMX skips what only GTFS has and needs names and #RRGGBB colors', () => {
+  const tc = M.defaultTestCase()
+  tc.arrange.lines[0].stops[0].arrival = 'soon' // GTFS-only problems: a bad time, a bad calendar, no trips, no phone
+  tc.arrange.calendars[0].start = 'someday'
+  tc.arrange.trips = []
+  const levels = (format: M.Format, level: string) => M.validate(tc, format).filter(p => p.level === level).map(p => p.text)
+  expect(levels('gtfs', 'error')).toHaveLength(2)
+  expect(levels('gtfs', 'warning').join('\n')).toMatch(/phone|trip/i)
+  expect(levels('tmx', 'error')).toEqual([])
+  expect(levels('tmx', 'warning').join('\n')).not.toMatch(/phone|trip|calendar/i)
+  // what the Transport Map Editor refuses: errors in TMX (a nameless station is only a warning in GTFS)
+  tc.arrange.stations[0].name = ''
+  tc.arrange.lines[0].color = 'red'
+  expect(levels('tmx', 'error')).toHaveLength(2)
+  expect(levels('gtfs', 'error')).toHaveLength(2)
+  // and a station off the globe (11,000 km north of the XY origin): the editor would open the file as an empty map
+  M.setStationXY(tc.arrange.stations[1], 0, 1.1e7)
+  expect(levels('tmx', 'error')).toHaveLength(3)
+  expect(levels('gtfs', 'error')).toHaveLength(2)
+})
+
 it('map labels: overlapping ones are dropped, by priority', () => {
   // a station at (x, y) with a 100 px wide label to its upper right
   const at = (id: number, x: number, y: number, priority = 1) => ({

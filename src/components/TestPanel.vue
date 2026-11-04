@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Textarea } from '@/components/ui/textarea'
 import { confirmDialog } from '@/composables/useConfirm'
-import { setTab, tc } from '@/composables/useEditor'
+import { format, setTab, tc } from '@/composables/useEditor'
 import { t } from '@/lib/i18n'
 import { cloneModel, isPhoneMissing, KNOWN_EXCEPTIONS, LIMITS, room } from '@/lib/model'
 
@@ -62,7 +62,8 @@ async function copyArrange() {
         </div>
       </PanelSection>
 
-      <PanelSection id="agency" title="Agency">
+      <!-- GTFS only: a .tmx has no agency -->
+      <PanelSection v-if="format === 'gtfs'" id="agency" title="Agency">
         <FormField label="Name"><Input v-model="tc.agency.name" :maxlength="room(LIMITS.text, tc.agency.name)" /></FormField>
         <FormField label="URL"><Input v-model="tc.agency.url" :maxlength="room(LIMITS.text, tc.agency.url)" /></FormField>
         <div class="grid grid-cols-2 gap-2 @max-[16rem]:grid-cols-1">
