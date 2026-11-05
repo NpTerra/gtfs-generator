@@ -43,8 +43,9 @@ async function deflateRaw(data: Uint8Array): Promise<Uint8Array> {
 
 // As JSZip writes with compression: 'DEFLATE' (the .tmx editor's zips): files deflated, and an
 // entry for each folder ("history/", then "history/snapshots/", …) before the first file in it.
-// Names are flagged UTF-8 only when they aren't plain ASCII, as JSZip does.
-export async function createDeflated(files: ZipEntry[], date = new Date()): Promise<Uint8Array> {
+// Names are flagged UTF-8 only when they aren't plain ASCII, as JSZip does. The comment is the
+// archive's, at its very end.
+export async function createDeflated(files: ZipEntry[], date = new Date(), comment = ''): Promise<Uint8Array> {
   const encoder = new TextEncoder()
   const entries: Parameters<typeof assemble>[0] = []
   const folders = new Set<string>()
@@ -59,14 +60,14 @@ export async function createDeflated(files: ZipEntry[], date = new Date()): Prom
     const raw = typeof file.data === 'string' ? encoder.encode(file.data) : file.data
     entries.push({ name: file.name, data: await deflateRaw(raw), size: raw.length, crc: crc32(raw), deflated: true, dir: false })
   }
-  return assemble(entries, date, 'jszip')
+  return assemble(entries, date, 'jszip', comment)
 }
 
 // the local headers and data, then the central directory. JSZip's style: the UTF-8 flag only on
 // non-ASCII names, and "version needed to extract" 1.0 on every entry (deflated ones too)
 function assemble(
   entries: { name: string; data: Uint8Array; size: number; crc: number; deflated: boolean; dir: boolean }[],
-  date: Date, style: 'plain' | 'jszip',
+  date: Date, style: 'plain' | 'jszip', comment = '',
 ): Uint8Array {
   const encoder = new TextEncoder()
   const { time, day } = dosDateTime(date)
@@ -121,8 +122,10 @@ function assemble(
   eocd.setUint16(10, entries.length, true)
   eocd.setUint32(12, centralSize, true)
   eocd.setUint32(16, offset, true) // central directory offset
+  const commentBytes = encoder.encode(comment)
+  eocd.setUint16(20, commentBytes.length, true)
 
-  const parts = [...localParts, ...centralParts, new Uint8Array(eocd.buffer)]
+  const parts = [...localParts, ...centralParts, new Uint8Array(eocd.buffer), commentBytes]
   const total = new Uint8Array(parts.reduce((sum, p) => sum + p.length, 0))
   let pos = 0
   for (const part of parts) { total.set(part, pos); pos += part.length }
