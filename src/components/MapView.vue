@@ -122,28 +122,41 @@ const network = computed(() => {
   return { drawable, sharing }
 })
 
+// Spacing between neighbours on a stretch: a stroke and a gap (GAP of a stroke's width), so
+// each line reads as its own stripe; past a few lines the strokes get thinner instead of
+// overlapping, so a bundle is never wider than a dot
+const GAP = 0.6
 const lines = computed(() => {
   if (!network.value) return []
   const { drawable, sharing } = network.value
+  const roomy = lineW.value * (1 + GAP)
   return drawable.map(({ line, stops }) => {
-    let d = ''
-    const segments: [number, number, number, number][] = [] // as drawn, for pointing at the line
+    // a line's stretches, joined at their stops (where its place in the bundle changes, it bends
+    // there, under the stop's dot), in one path per stroke width
+    const pieces = new Map<number, string>()
+    const segments: [number, number, number, number, number][] = [] // as drawn, with their width, for pointing at the line
+    let from: { x: number; y: number } | null = null // where the stretch before ended
     for (let i = 0; i < stops.length - 1; i++) {
       const on = sharing.get(pairKey(stops[i].id, stops[i + 1].id))!
-      // side by side, but the whole bundle never gets wider than a dot (they overlap instead)
-      const offset = (on.indexOf(line.id) - (on.length - 1) / 2) * Math.min(lineW.value, 2 * dotR.value / on.length)
+      const step = Math.min(roomy, 2 * dotR.value / on.length)
+      const w = Math.min(lineW.value, Math.max(0.75, step / (1 + GAP)))
+      const offset = (on.indexOf(line.id) - (on.length - 1) / 2) * step
       const a = toLayer(stops[i].x, stops[i].y), b = toLayer(stops[i + 1].x, stops[i + 1].y)
-      if (!stretchInView(a, b, Math.abs(offset) + 8)) continue
       const [lo, hi] = stops[i].id < stops[i + 1].id ? [a, b] : [b, a]
       const len = Math.hypot(hi.x - lo.x, hi.y - lo.y) || 1
       const nx = -(hi.y - lo.y) / len * offset, ny = (hi.x - lo.x) / len * offset
-      d += `M ${a.x + nx} ${a.y + ny} L ${b.x + nx} ${b.y + ny} `
-      segments.push([a.x + nx, a.y + ny, b.x + nx, b.y + ny])
+      const start = { x: a.x + nx, y: a.y + ny }, end = { x: b.x + nx, y: b.y + ny }
+      if (stretchInView(a, b, Math.abs(offset) + 8)) {
+        const head = from ? `M ${from.x} ${from.y} L ${start.x} ${start.y}` : `M ${start.x} ${start.y}`
+        pieces.set(w, (pieces.get(w) ?? '') + `${head} L ${end.x} ${end.y} `)
+        segments.push([start.x, start.y, end.x, end.y, w])
+      }
+      from = end
     }
     const names = act.value?.lineNames
     const isTarget = !!names && (names.has(line.shortName.toLowerCase()) || names.has(line.name.toLowerCase()))
-    return { line, path: new Path2D(d), segments, isTarget, empty: !d }
-  }).filter(l => !l.empty)
+    return { line, paths: [...pieces].map(([w, d]) => ({ w, path: new Path2D(d) })), segments, isTarget }
+  }).filter(l => l.paths.length)
 })
 
 const ghostLines = computed(() => {
@@ -358,13 +371,13 @@ const LINE_REACH = 4 // px beyond the stroke
 function lineAt(ev: MouseEvent) {
   const pt = eventPoint(ev)
   const x = (pt.x - pan.value.x) / zoom.value, y = (pt.y - pan.value.y) / zoom.value
-  let found: number | null = null, nearest = lineW.value / 2 + LINE_REACH
+  let found: number | null = null, nearest = Infinity
   for (const { line, segments } of lines.value)
-    for (const [ax, ay, bx, by] of segments) {
+    for (const [ax, ay, bx, by, w] of segments) {
       const dx = bx - ax, dy = by - ay
       const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)))
-      const d = Math.hypot(ax + t * dx - x, ay + t * dy - y)
-      if (d <= nearest) { nearest = d; found = line.id }
+      const d = Math.hypot(ax + t * dx - x, ay + t * dy - y) - w / 2 // from the stroke's edge
+      if (d <= LINE_REACH && d < nearest) { nearest = d; found = line.id }
     }
   return found
 }
@@ -657,16 +670,20 @@ function draw() {
   ctx.globalAlpha = pointed ? 0.25 : 0.9 // a hovered line stands out from the faded rest
   for (const l of lines.value) {
     ctx.strokeStyle = l.line.color || '#555'
-    ctx.lineWidth = l.isTarget ? lineW.value + 1.5 : lineW.value
     if (l.isTarget) { ctx.shadowColor = c['--destructive']; ctx.shadowBlur = 6 }
-    ctx.stroke(l.path)
+    for (const { w, path } of l.paths) {
+      ctx.lineWidth = l.isTarget ? w + 1.5 : w
+      ctx.stroke(path)
+    }
     ctx.shadowBlur = 0
   }
   ctx.globalAlpha = 1
   if (pointed) { // on top, a little wider
     ctx.strokeStyle = pointed.line.color || '#555'
-    ctx.lineWidth = lineW.value + 2
-    ctx.stroke(pointed.path)
+    for (const { w, path } of pointed.paths) {
+      ctx.lineWidth = w + 2
+      ctx.stroke(path)
+    }
   }
 
   const r = dotR.value
